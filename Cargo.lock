@@ -1075,19 +1075,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a3e378b66a060d48947b590737b30a1be76706c8dd7b8ba0f2fe3989c68a853f"
 
 [[package]]
-name = "matrix-client"
-version = "0.1.0"
-dependencies = [
- "clap",
- "crossterm 0.23.2",
- "matrix-sdk",
- "tokio",
- "tui",
- "unicode-width",
- "url",
-]
-
-[[package]]
 name = "matrix-qrcode"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1200,6 +1187,19 @@ dependencies = [
  "thiserror",
  "tracing",
  "zeroize",
+]
+
+[[package]]
+name = "matrix_client"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "crossterm 0.23.2",
+ "matrix-sdk",
+ "tokio",
+ "tui",
+ "unicode-width",
+ "url",
 ]
 
 [[package]]
