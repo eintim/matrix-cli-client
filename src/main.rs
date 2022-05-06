@@ -9,6 +9,7 @@ use crossterm::{
 };
 use std::io;
 use tui::{backend::CrosstermBackend, Terminal};
+use url::Url;
 
 mod app;
 mod ui;
@@ -17,6 +18,10 @@ use crate::ui::run_ui;
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
+    /// Matrix Homeserver
+    #[clap(default_value = "https://matrix.org")]
+    home_server: String,
+
     /// Username
     #[clap(short)]
     username: String,
@@ -31,6 +36,16 @@ async fn main() -> io::Result<()> {
     // parse args
     let args = Args::parse();
 
+    let homeserver_url = match Url::parse(&args.home_server) {
+        Ok(url) => url,
+        Err(_) => {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Could not parse homeserver url",
+            ));
+        }
+    };
+
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -40,7 +55,14 @@ async fn main() -> io::Result<()> {
 
     // create app and run ui
     let app = App::new();
-    let res = run_ui(&mut terminal, app, args.username, args.password).await;
+    let res = run_ui(
+        &mut terminal,
+        app,
+        args.username,
+        args.password,
+        homeserver_url,
+    )
+    .await;
 
     // restore terminal
     disable_raw_mode()?;

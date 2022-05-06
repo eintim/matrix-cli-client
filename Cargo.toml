@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "3.1.9", features = ["derive"] }
-matrix-sdk = "0.4.1"
+matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk/" }
 tokio = { version = "1.17.0", features = ["full"] }
 url = "2.2.2"
 tui = "0.17.0"

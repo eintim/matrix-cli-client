@@ -13,31 +13,28 @@ use tui::{
 };
 
 use matrix_sdk::{
+    config::SyncSettings,
     room::Room,
     ruma::{
-        events::{room::message::MessageEventContent, SyncMessageEvent},
-        RoomId, UserId,
+        events::room::message::{OriginalSyncRoomMessageEvent, RoomMessageEventContent},
+        RoomId,
     },
-    Client, SyncSettings,
+    Client,
 };
+
+use url::Url;
 
 pub async fn run_ui<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: App,
     username: String,
     password: String,
+    homeserver: Url,
 ) -> io::Result<()> {
     // let (send_tx, send_rx) = mpsc::channel(100);
     let (recv_tx, mut recv_rx) = mpsc::channel(100);
 
-    let user_id = match UserId::try_from(username.clone()) {
-        Ok(user_id) => user_id,
-        Err(_) => {
-            return Err(io::Error::new(io::ErrorKind::Other, "Invalid username"));
-        }
-    };
-
-    let client = match Client::new_from_user_id(user_id.clone()).await {
+    let client = match Client::new(homeserver).await {
         Ok(client) => client,
         Err(_) => {
             return Err(io::Error::new(
@@ -64,7 +61,7 @@ pub async fn run_ui<B: Backend>(
     client
         .register_event_handler({
             let tx = recv_tx.clone();
-            move |ev: SyncMessageEvent<MessageEventContent>, room: Room| {
+            move |ev: OriginalSyncRoomMessageEvent, room: Room| {
                 let tx = tx.clone();
                 async move {
                     match tx.send((ev, room)).await {
@@ -121,12 +118,12 @@ pub async fn run_ui<B: Backend>(
                     }
                     KeyCode::Enter => match app.rooms.get_current_room() {
                         Some(room) => {
-                            let room_id = match RoomId::try_from(room.id.to_string()) {
+                            let room_id = match RoomId::parse(room.id.clone()) {
                                 Ok(room_id) => room_id,
                                 Err(_) => {
                                     return Err(io::Error::new(
                                         io::ErrorKind::Other,
-                                        "Invalid room id",
+                                        "Could not parse room id",
                                     ));
                                 }
                             };
@@ -139,7 +136,7 @@ pub async fn run_ui<B: Backend>(
                                     ));
                                 }
                             };
-                            let content = MessageEventContent::text_plain(format!(
+                            let content = RoomMessageEventContent::text_plain(format!(
                                 "🎉🎊🥳 let's PARTY!! 🥳🎊🎉"
                             ));
                             match room.send(content, None).await {

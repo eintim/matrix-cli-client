@@ -1,5 +1,6 @@
-use matrix_sdk::ruma::events::{room::message::MessageEventContent, SyncMessageEvent};
-
+use matrix_sdk::{
+    room::Room as MatrixRoom, ruma::events::room::message::OriginalSyncRoomMessageEvent,
+};
 use tui::widgets::ListState;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -84,18 +85,17 @@ pub struct Room {
 }
 
 impl Room {
-    pub async fn new(room: matrix_sdk::room::Room) -> Room {
+    pub async fn new(room: MatrixRoom) -> Room {
         let name = match room.display_name().await {
-            Ok(name) => name,
+            Ok(name) => name.to_string(),
             Err(_) => "Unknown".to_string(),
         };
-        let id = room.room_id().to_string();
 
         //TODO Get past messages
 
         Room {
             name: name,
-            id: id,
+            id: room.room_id().to_string(),
             messages: ScrollableMessageList::new(),
         }
     }
@@ -114,7 +114,7 @@ impl ScrollableRoomList {
         }
     }
 
-    pub async fn add_room(&mut self, room: matrix_sdk::room::Room) {
+    pub async fn add_room(&mut self, room: MatrixRoom) {
         let room = Room::new(room).await;
         self.rooms.push(room);
     }
@@ -181,7 +181,7 @@ impl App {
     }
     pub fn handle_matrix_event(
         &mut self,
-        event: SyncMessageEvent<MessageEventContent>,
+        event: OriginalSyncRoomMessageEvent,
         room: matrix_sdk::room::Room,
     ) {
         let room = room.room_id().to_string();
