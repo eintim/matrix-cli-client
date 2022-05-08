@@ -233,13 +233,14 @@ pub enum Tabs {
     Room,
     Members,
     Messages,
-    //Input,
+    Input,
 }
 
 pub struct App {
     pub rooms: ScrollableRoomList,
     pub logged_in: bool,
     pub current_tab: Tabs,
+    pub input: String,
 }
 
 impl Default for App {
@@ -248,6 +249,7 @@ impl Default for App {
             rooms: ScrollableRoomList::new(),
             logged_in: false,
             current_tab: Tabs::Room,
+            input: String::new(),
         }
     }
 }
@@ -297,9 +299,12 @@ impl App {
         match self.current_tab {
             Tabs::Room => self.current_tab = Tabs::Messages,
             Tabs::Messages => match self.rooms.state.selected() {
-                Some(_) => self.current_tab = Tabs::Members,
+                Some(_) => self.current_tab = Tabs::Input,
                 None => self.current_tab = Tabs::Room,
             },
+            Tabs::Input => {
+                self.current_tab = Tabs::Members;
+            }
             Tabs::Members => {
                 match self.rooms.get_current_room() {
                     Some(r) => {
@@ -308,7 +313,7 @@ impl App {
                     None => {}
                 }
                 self.current_tab = Tabs::Room;
-            } //_ => self.current_tab = Tabs::Room,
+            }
         }
     }
 }

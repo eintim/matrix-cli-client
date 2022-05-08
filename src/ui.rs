@@ -13,11 +13,18 @@ use tui::{
 };
 
 use matrix_sdk::{
-    config::SyncSettings, room::Room as MatrixRoom,
-    ruma::events::room::message::OriginalSyncRoomMessageEvent, Client,
+    config::SyncSettings,
+    room::Room as MatrixRoom,
+    ruma::{
+        events::room::message::{OriginalSyncRoomMessageEvent, RoomMessageEventContent},
+        RoomId,
+    },
+    Client,
 };
 
 use url::Url;
+
+use unicode_width::UnicodeWidthStr;
 
 pub async fn run_ui<B: Backend>(
     terminal: &mut Terminal<B>,
@@ -101,7 +108,7 @@ pub async fn run_ui<B: Backend>(
             if let Event::Key(key) = event::read()? {
                 match app.current_tab {
                     Tabs::Room => match key.code {
-                        KeyCode::Char('q') | KeyCode::Char('Q') => {
+                        KeyCode::Esc => {
                             return Ok(());
                         }
                         KeyCode::Up => {
@@ -116,7 +123,7 @@ pub async fn run_ui<B: Backend>(
                         _ => {}
                     },
                     Tabs::Messages => match key.code {
-                        KeyCode::Char('q') | KeyCode::Char('Q') => {
+                        KeyCode::Esc => {
                             return Ok(());
                         }
                         KeyCode::Up => app.current_room_previous_message(),
@@ -127,7 +134,7 @@ pub async fn run_ui<B: Backend>(
                         _ => {}
                     },
                     Tabs::Members => match key.code {
-                        KeyCode::Char('q') | KeyCode::Char('Q') => {
+                        KeyCode::Esc => {
                             return Ok(());
                         }
                         KeyCode::Up => match app.rooms.get_current_room() {
@@ -144,6 +151,50 @@ pub async fn run_ui<B: Backend>(
                         },
                         KeyCode::Tab => {
                             app.next_tab();
+                        }
+                        _ => {}
+                    },
+                    Tabs::Input => match key.code {
+                        KeyCode::Esc => {
+                            return Ok(());
+                        }
+                        KeyCode::Tab => {
+                            app.next_tab();
+                        }
+                        KeyCode::Enter => match app.rooms.get_current_room() {
+                            Some(room) => {
+                                let room_id = match RoomId::parse(room.id.clone()) {
+                                    Ok(room_id) => room_id,
+                                    Err(_) => {
+                                        return Err(io::Error::new(
+                                            io::ErrorKind::Other,
+                                            "Could not parse room id",
+                                        ));
+                                    }
+                                };
+                                let room = match client.get_joined_room(&room_id) {
+                                    Some(room) => room,
+                                    None => {
+                                        return Err(io::Error::new(
+                                            io::ErrorKind::Other,
+                                            "Unable to get room from server",
+                                        ));
+                                    }
+                                };
+                                let message: String = app.input.drain(..).collect();
+                                let content = RoomMessageEventContent::text_plain(message);
+                                match room.send(content, None).await {
+                                    Ok(_) => (),
+                                    Err(_) => (),
+                                };
+                            }
+                            None => {}
+                        },
+                        KeyCode::Char(c) => {
+                            app.input.push(c);
+                        }
+                        KeyCode::Backspace => {
+                            app.input.pop();
                         }
                         _ => {}
                     },
@@ -167,7 +218,12 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     // Message Widget
     match app.rooms.get_current_room() {
         Some(room) => {
-            draw_message_tab(f, &app.current_tab, room, chunks[1]);
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(5), Constraint::Max(3)].as_ref())
+                .split(chunks[1]);
+            draw_message_tab(f, &app.current_tab, room, chunks[0]);
+            draw_input_tab(f, app, chunks[1]);
         }
         None => {
             draw_welcome_tab(f, &app.current_tab, chunks[1]);
@@ -184,7 +240,8 @@ where
         Spans::from(""),
         Spans::from("To switch between tabs use tab key"),
         Spans::from("To scroll up and down use up and down arrow keys"),
-        Spans::from("To quit the client use q"),
+        Spans::from("To send a message use enter key"),
+        Spans::from("To quit the client use ESC"),
     ];
     let block = match current_tab {
         Tabs::Messages => Block::default()
@@ -301,4 +358,34 @@ where
         .highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .highlight_symbol("> ");
     f.render_stateful_widget(members, area, &mut room.members.state);
+}
+
+fn draw_input_tab<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
+where
+    B: Backend,
+{
+    let block = match app.current_tab {
+        Tabs::Input => Block::default()
+            .borders(Borders::ALL)
+            .title("Input")
+            .border_type(BorderType::Thick),
+        _ => Block::default().borders(Borders::ALL).title("Input"),
+    };
+
+    let input = Paragraph::new(app.input.as_ref())
+        .style(Style::default())
+        .block(block);
+    f.render_widget(input, area);
+    match app.current_tab {
+        Tabs::Input => {
+            // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
+            f.set_cursor(
+                // Put cursor past the end of the input text
+                area.x + app.input.width() as u16 + 1,
+                // Move one line down, from the border to the input line
+                area.y + 1,
+            )
+        }
+        _ => {} // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
+    }
 }
