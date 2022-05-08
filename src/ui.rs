@@ -186,7 +186,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
                 .iter()
                 .enumerate()
                 .map(|(_i, m)| {
-                    let content = vec![Spans::from(Span::raw(format!("{}: {}", m.0, m.1)))];
+                    let content = vec![Spans::from(Span::raw(format!("{} {}: {}", m.0, m.1, m.2)))];
                     ListItem::new(content)
                 })
                 .collect();

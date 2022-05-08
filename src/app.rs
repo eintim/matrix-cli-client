@@ -1,7 +1,11 @@
 use matrix_sdk::{
-    room::Room as MatrixRoom, ruma::events::room::message::OriginalSyncRoomMessageEvent,
+    room::Room as MatrixRoom,
+    ruma::events::room::message::{MessageType, OriginalSyncRoomMessageEvent},
 };
 use tui::widgets::ListState;
+
+use chrono::offset::Utc;
+use chrono::DateTime;
 
 #[derive(Debug, PartialEq, Eq)]
 enum MessageViewMode {
@@ -11,7 +15,7 @@ enum MessageViewMode {
 
 pub struct ScrollableMessageList {
     pub state: ListState,
-    pub messages: Vec<(String, String)>,
+    pub messages: Vec<(String, String, String)>,
     mode: MessageViewMode,
 }
 
@@ -32,8 +36,8 @@ impl ScrollableMessageList {
     //     }
     // }
 
-    pub fn add_message(&mut self, sender: String, message: String) {
-        self.messages.push((sender, message));
+    pub fn add_message(&mut self, time: String, sender: String, message: String) {
+        self.messages.push((time, sender, message));
         // Follow mode
         if self.mode == MessageViewMode::Follow {
             self.state.select(Some(self.messages.len() - 1));
@@ -185,13 +189,26 @@ impl App {
         room: matrix_sdk::room::Room,
     ) {
         let room = room.room_id().to_string();
+        let system_time = match event.origin_server_ts.to_system_time(){
+            Some(time) => time,
+            None => return,
+
+        };
+let datetime : DateTime<Utc> = system_time.into();
+
+
+
         let sender = event.sender.to_string();
         let message = event.content;
 
+
         match self.rooms.rooms.iter_mut().find(|r| r.id == room) {
             Some(r) => {
-                r.messages
-                    .add_message(sender, (format!("{:?}", message.msgtype)).to_string());
+                r.messages.add_message(
+                    datetime.format("%d/%m/%Y %T").to_string(),
+                    sender,
+                    convert_message_type(message.msgtype),
+                );
             }
             None => {}
         }
@@ -205,5 +222,18 @@ impl App {
         if let Some(r) = self.rooms.get_current_room() {
             r.messages.previous_message();
         }
+    }
+}
+
+fn convert_message_type(msgtype: MessageType) -> String {
+    match msgtype {
+        MessageType::Text(content) => content.body,
+        MessageType::Audio(content) => "Has send audio: ".to_string() + &content.body,
+        //MessageType::Emote(content) => "Has send Sticker: ".to_string() + &content.body,
+        MessageType::File(content) => "Has send file: ".to_string() + &content.body,
+        MessageType::Image(content) => "Has send image: ".to_string() + &content.body,
+        MessageType::Video(content) => "Has send video: ".to_string() + &content.body,
+        MessageType::Location(content) => "Has send location: ".to_string() + &content.geo_uri,
+        _ => "Unknown messagetype".to_string(),
     }
 }
