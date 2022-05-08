@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout},
-    style::{Modifier, Style},
+    style::{Modifier, Style, Color},
     text::{Span, Spans},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
     Frame, Terminal,
@@ -186,8 +186,13 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
                 .iter()
                 .enumerate()
                 .map(|(_i, m)| {
-                    let content = vec![Spans::from(Span::raw(format!("{} {}: {}", m.0, m.1, m.2)))];
-                    ListItem::new(content)
+                    let content = vec![Spans::from(vec![
+                        Span::styled(format!("{}", m.0), Style::default().fg(Color::Green)),
+                        Span::styled(format!("{}", m.1), Style::default().fg(Color::Red)),
+                        Span::from(format!("{}", m.2)),
+
+                    ])];
+                    ListItem::new(span)
                 })
                 .collect();
             let messages = List::new(messages)
