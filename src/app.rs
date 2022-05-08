@@ -165,9 +165,18 @@ impl ScrollableRoomList {
     }
 }
 
+#[derive(PartialEq, Eq)]
+pub enum Tabs {
+    Room,
+    //Members,
+    Messages,
+    //Input,
+}
+
 pub struct App {
     pub rooms: ScrollableRoomList,
     pub logged_in: bool,
+    pub current_tab: Tabs,
 }
 
 impl Default for App {
@@ -175,6 +184,7 @@ impl Default for App {
         App {
             rooms: ScrollableRoomList::new(),
             logged_in: false,
+            current_tab: Tabs::Room,
         }
     }
 }
@@ -189,18 +199,14 @@ impl App {
         room: matrix_sdk::room::Room,
     ) {
         let room = room.room_id().to_string();
-        let system_time = match event.origin_server_ts.to_system_time(){
+        let system_time = match event.origin_server_ts.to_system_time() {
             Some(time) => time,
             None => return,
-
         };
-let datetime : DateTime<Utc> = system_time.into();
-
-
+        let datetime: DateTime<Utc> = system_time.into();
 
         let sender = event.sender.to_string();
         let message = event.content;
-
 
         match self.rooms.rooms.iter_mut().find(|r| r.id == room) {
             Some(r) => {
@@ -221,6 +227,14 @@ let datetime : DateTime<Utc> = system_time.into();
     pub fn current_room_previous_message(&mut self) {
         if let Some(r) = self.rooms.get_current_room() {
             r.messages.previous_message();
+        }
+    }
+
+    pub fn next_tab(&mut self) {
+        match self.current_tab {
+            Tabs::Room => self.current_tab = Tabs::Messages,
+            Tabs::Messages => self.current_tab = Tabs::Room,
+            //_ => self.current_tab = Tabs::Room,
         }
     }
 }
