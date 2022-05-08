@@ -1,20 +1,20 @@
-use crate::app::App;
+use crate::app::{App, Room, Tabs};
 
 use crossterm::event::{self, poll, Event, KeyCode};
 use std::{io, time::Duration};
 use tokio::sync::mpsc;
 use tui::{
     backend::Backend,
-    layout::{Constraint, Direction, Layout},
-    style::{Modifier, Style},
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, Wrap},
     Frame, Terminal,
 };
 
 use matrix_sdk::{
     config::SyncSettings,
-    room::Room,
+    room::Room as MatrixRoom,
     ruma::{
         events::room::message::{OriginalSyncRoomMessageEvent, RoomMessageEventContent},
         RoomId,
@@ -23,6 +23,8 @@ use matrix_sdk::{
 };
 
 use url::Url;
+
+use unicode_width::UnicodeWidthStr;
 
 pub async fn run_ui<B: Backend>(
     terminal: &mut Terminal<B>,
@@ -61,7 +63,7 @@ pub async fn run_ui<B: Backend>(
     client
         .register_event_handler({
             let tx = recv_tx.clone();
-            move |ev: OriginalSyncRoomMessageEvent, room: Room| {
+            move |ev: OriginalSyncRoomMessageEvent, room: MatrixRoom| {
                 let tx = tx.clone();
                 async move {
                     match tx.send((ev, room)).await {
@@ -104,49 +106,103 @@ pub async fn run_ui<B: Backend>(
 
         if poll(Duration::from_millis(10))? {
             if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('q') => {
-                        return Ok(());
-                    }
-                    KeyCode::Up => app.current_room_previous_message(),
-                    KeyCode::Down => app.current_room_next_message(),
-                    KeyCode::Left => {
-                        app.rooms.previous_room();
-                    }
-                    KeyCode::Right => {
-                        app.rooms.next_room();
-                    }
-                    KeyCode::Enter => match app.rooms.get_current_room() {
-                        Some(room) => {
-                            let room_id = match RoomId::parse(room.id.clone()) {
-                                Ok(room_id) => room_id,
-                                Err(_) => {
-                                    return Err(io::Error::new(
-                                        io::ErrorKind::Other,
-                                        "Could not parse room id",
-                                    ));
-                                }
-                            };
-                            let room = match client.get_joined_room(&room_id) {
-                                Some(room) => room,
-                                None => {
-                                    return Err(io::Error::new(
-                                        io::ErrorKind::Other,
-                                        "Unable to get room from server",
-                                    ));
-                                }
-                            };
-                            let content = RoomMessageEventContent::text_plain(format!(
-                                "🎉🎊🥳 let's PARTY!! 🥳🎊🎉"
-                            ));
-                            match room.send(content, None).await {
-                                Ok(_) => (),
-                                Err(_) => (),
-                            };
+                match app.current_tab {
+                    Tabs::Room => match key.code {
+                        KeyCode::Esc => {
+                            return Ok(());
                         }
-                        None => (),
+                        KeyCode::Up => {
+                            app.rooms.previous_room();
+                        }
+                        KeyCode::Down => {
+                            app.rooms.next_room();
+                        }
+                        KeyCode::Tab => {
+                            app.next_tab();
+                        }
+                        _ => {}
                     },
-                    _ => {}
+                    Tabs::Messages => match key.code {
+                        KeyCode::Esc => {
+                            return Ok(());
+                        }
+                        KeyCode::Up => app.current_room_previous_message(),
+                        KeyCode::Down => app.current_room_next_message(),
+                        KeyCode::Tab => {
+                            app.next_tab();
+                        }
+                        _ => {}
+                    },
+                    Tabs::Members => match key.code {
+                        KeyCode::Esc => {
+                            return Ok(());
+                        }
+                        KeyCode::Up => match app.rooms.get_current_room() {
+                            Some(room) => {
+                                room.members.next_member();
+                            }
+                            None => {}
+                        },
+                        KeyCode::Down => match app.rooms.get_current_room() {
+                            Some(room) => {
+                                room.members.previous_member();
+                            }
+                            None => {}
+                        },
+                        KeyCode::Tab => {
+                            app.next_tab();
+                        }
+                        _ => {}
+                    },
+                    Tabs::Input => match key.code {
+                        KeyCode::Esc => {
+                            return Ok(());
+                        }
+                        KeyCode::Tab => {
+                            app.next_tab();
+                        }
+                        KeyCode::Enter => match app.rooms.get_current_room() {
+                            Some(room) => {
+                                if app.input.is_empty() {
+                                    continue;
+                                }
+                                let room_id = match RoomId::parse(room.id.clone()) {
+                                    Ok(room_id) => room_id,
+                                    Err(_) => {
+                                        return Err(io::Error::new(
+                                            io::ErrorKind::Other,
+                                            "Could not parse room id",
+                                        ));
+                                    }
+                                };
+                                let room = match client.get_joined_room(&room_id) {
+                                    Some(room) => room,
+                                    None => {
+                                        return Err(io::Error::new(
+                                            io::ErrorKind::Other,
+                                            "Unable to get room from server",
+                                        ));
+                                    }
+                                };
+                                let message: String = app.input.drain(..).collect();
+
+                                let content = RoomMessageEventContent::text_plain(message);
+                                match room.send(content, None).await {
+                                    Ok(_) => (),
+                                    Err(_) => (),
+                                };
+                            }
+                            None => {}
+                        },
+                        KeyCode::Char(c) => {
+                            app.input.push(c);
+                        }
+                        KeyCode::Backspace => {
+                            app.input.pop();
+                        }
+                        _ => {}
+                    },
+                    //_ => {}
                 }
             }
         }
@@ -161,6 +217,85 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .split(f.size());
 
     //Room Select Widget
+    draw_room_tab(f, app, chunks[0]);
+
+    // Message Widget
+    match app.rooms.get_current_room() {
+        Some(room) => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(5), Constraint::Max(3)].as_ref())
+                .split(chunks[1]);
+            draw_message_tab(f, &app.current_tab, room, chunks[0]);
+            draw_input_tab(f, app, chunks[1]);
+        }
+        None => {
+            draw_welcome_tab(f, &app.current_tab, chunks[1]);
+        }
+    };
+}
+
+fn draw_welcome_tab<B>(f: &mut Frame<B>, current_tab: &Tabs, area: Rect)
+where
+    B: Backend,
+{
+    let text = vec![
+        Spans::from("This is a Matrix Tui Client"),
+        Spans::from(""),
+        Spans::from("To switch between tabs use tab key"),
+        Spans::from("To scroll up and down use up and down arrow keys"),
+        Spans::from("To send a message use enter key"),
+        Spans::from("To quit the client use ESC"),
+    ];
+    let block = match current_tab {
+        Tabs::Messages => Block::default()
+            .borders(Borders::ALL)
+            .title("Welcome")
+            .border_type(BorderType::Thick),
+        _ => Block::default().borders(Borders::ALL).title("Welcome"),
+    };
+    let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
+    f.render_widget(paragraph, area);
+}
+
+fn draw_message_tab<B>(f: &mut Frame<B>, current_tab: &Tabs, room: &mut Room, area: Rect)
+where
+    B: Backend,
+{
+    let messages: Vec<ListItem> = room
+        .messages
+        .messages
+        .iter()
+        .enumerate()
+        .map(|(_i, m)| {
+            let content = vec![Spans::from(vec![
+                Span::styled(format!("{}", m.0), Style::default().fg(Color::Green)),
+                Span::styled(format!("{}", m.1), Style::default().fg(Color::Red)),
+                Span::from(format!("{}", m.2)),
+            ])];
+            ListItem::new(content)
+        })
+        .collect();
+
+    let block_message = match current_tab {
+        Tabs::Messages => Block::default()
+            .borders(Borders::ALL)
+            .title("Messages")
+            .border_type(BorderType::Thick),
+        _ => Block::default().borders(Borders::ALL).title("Messages"),
+    };
+    let messages = List::new(messages)
+        .block(block_message)
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol("> ");
+
+    f.render_stateful_widget(messages, area, &mut room.messages.state);
+}
+
+fn draw_room_tab<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
+where
+    B: Backend,
+{
     let rooms: Vec<ListItem> = app
         .rooms
         .rooms
@@ -171,46 +306,90 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             ListItem::new(content)
         })
         .collect();
+    let block_rooms = match app.current_tab {
+        Tabs::Room => Block::default()
+            .borders(Borders::ALL)
+            .title("Rooms")
+            .border_type(BorderType::Thick),
+        _ => Block::default().borders(Borders::ALL).title("Rooms"),
+    };
+
     let rooms = List::new(rooms)
-        .block(Block::default().borders(Borders::ALL).title("Rooms"))
+        .block(block_rooms)
         .highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .highlight_symbol("> ");
-    f.render_stateful_widget(rooms, chunks[0], &mut app.rooms.state);
 
-    // Message Widget
-    match app.rooms.get_current_room() {
-        Some(room) => {
-            let messages: Vec<ListItem> = room
-                .messages
-                .messages
-                .iter()
-                .enumerate()
-                .map(|(_i, m)| {
-                    let content = vec![Spans::from(Span::raw(format!("{} {}: {}", m.0, m.1, m.2)))];
-                    ListItem::new(content)
-                })
-                .collect();
-            let messages = List::new(messages)
-                .block(Block::default().borders(Borders::ALL).title("Messages"))
-                .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-                .highlight_symbol("> ");
-            f.render_stateful_widget(messages, chunks[1], &mut room.messages.state);
+    //If room is selected render Member list
+    match app.rooms.state.selected() {
+        Some(i) => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(70), Constraint::Percentage(30)].as_ref())
+                .split(area);
+            f.render_stateful_widget(rooms, chunks[0], &mut app.rooms.state);
+            draw_member_tab(f, &app.current_tab, &mut app.rooms.rooms[i], chunks[1]);
         }
         None => {
-            let text = vec![
-                Spans::from("This is a Matrix Tui Client"),
-                Spans::from(""),
-                Spans::from("To switch between rooms use left and right arrow keys"),
-                Spans::from("To scroll up and down use up and down arrow keys"),
-                Spans::from("To send a message in current room use enter"),
-                Spans::from("To quit the client use q"),
-            ];
-            let block = Block::default().borders(Borders::ALL).title(Span::styled(
-                "Welcome Screen",
-                Style::default().add_modifier(Modifier::BOLD),
-            ));
-            let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
-            f.render_widget(paragraph, chunks[1]);
+            f.render_stateful_widget(rooms, area, &mut app.rooms.state);
         }
     };
+}
+
+fn draw_member_tab<B>(f: &mut Frame<B>, current_tab: &Tabs, room: &mut Room, area: Rect)
+where
+    B: Backend,
+{
+    let members: Vec<ListItem> = room
+        .members
+        .members
+        .iter()
+        .enumerate()
+        .map(|(_i, m)| {
+            let content = vec![Spans::from(Span::raw(format!("{}", m)))];
+            ListItem::new(content)
+        })
+        .collect();
+
+    let block = match current_tab {
+        Tabs::Members => Block::default()
+            .borders(Borders::ALL)
+            .title("Member")
+            .border_type(BorderType::Thick),
+        _ => Block::default().borders(Borders::ALL).title("Member"),
+    };
+    let members = List::new(members)
+        .block(block)
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol("> ");
+    f.render_stateful_widget(members, area, &mut room.members.state);
+}
+
+fn draw_input_tab<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
+where
+    B: Backend,
+{
+    let block = match app.current_tab {
+        Tabs::Input => Block::default()
+            .borders(Borders::ALL)
+            .title("Input")
+            .border_type(BorderType::Thick),
+        _ => Block::default().borders(Borders::ALL).title("Input"),
+    };
+
+    let input = Paragraph::new(app.input.as_ref())
+        .style(Style::default())
+        .block(block);
+    f.render_widget(input, area);
+    match app.current_tab {
+        Tabs::Input => {
+            // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
+            f.set_cursor(
+                // Put cursor past the end of the input text
+                area.x + app.input.width() as u16 + 1,
+                // Move one line down, from the border to the input line
+                area.y + 1,
+            )
+        }
+        _ => {} // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
+    }
 }
