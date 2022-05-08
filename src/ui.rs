@@ -1,11 +1,11 @@
-use crate::app::{App, Tabs};
+use crate::app::{App, Room, Tabs};
 
 use crossterm::event::{self, poll, Event, KeyCode};
 use std::{io, time::Duration};
 use tokio::sync::mpsc;
 use tui::{
     backend::Backend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
     widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, Wrap},
@@ -13,8 +13,8 @@ use tui::{
 };
 
 use matrix_sdk::{
-    config::SyncSettings, room::Room, ruma::events::room::message::OriginalSyncRoomMessageEvent,
-    Client,
+    config::SyncSettings, room::Room as MatrixRoom,
+    ruma::events::room::message::OriginalSyncRoomMessageEvent, Client,
 };
 
 use url::Url;
@@ -56,7 +56,7 @@ pub async fn run_ui<B: Backend>(
     client
         .register_event_handler({
             let tx = recv_tx.clone();
-            move |ev: OriginalSyncRoomMessageEvent, room: Room| {
+            move |ev: OriginalSyncRoomMessageEvent, room: MatrixRoom| {
                 let tx = tx.clone();
                 async move {
                     match tx.send((ev, room)).await {
@@ -126,6 +126,27 @@ pub async fn run_ui<B: Backend>(
                         }
                         _ => {}
                     },
+                    Tabs::Members => match key.code {
+                        KeyCode::Char('q') | KeyCode::Char('Q') => {
+                            return Ok(());
+                        }
+                        KeyCode::Up => match app.rooms.get_current_room() {
+                            Some(room) => {
+                                room.members.next_member();
+                            }
+                            None => {}
+                        },
+                        KeyCode::Down => match app.rooms.get_current_room() {
+                            Some(room) => {
+                                room.members.previous_member();
+                            }
+                            None => {}
+                        },
+                        KeyCode::Tab => {
+                            app.next_tab();
+                        }
+                        _ => {}
+                    },
                     //_ => {}
                 }
             }
@@ -141,6 +162,79 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .split(f.size());
 
     //Room Select Widget
+    draw_room_tab(f, app, chunks[0]);
+
+    // Message Widget
+    match app.rooms.get_current_room() {
+        Some(room) => {
+            draw_message_tab(f, &app.current_tab, room, chunks[1]);
+        }
+        None => {
+            draw_welcome_tab(f, &app.current_tab, chunks[1]);
+        }
+    };
+}
+
+fn draw_welcome_tab<B>(f: &mut Frame<B>, current_tab: &Tabs, area: Rect)
+where
+    B: Backend,
+{
+    let text = vec![
+        Spans::from("This is a Matrix Tui Client"),
+        Spans::from(""),
+        Spans::from("To switch between tabs use tab key"),
+        Spans::from("To scroll up and down use up and down arrow keys"),
+        Spans::from("To quit the client use q"),
+    ];
+    let block = match current_tab {
+        Tabs::Messages => Block::default()
+            .borders(Borders::ALL)
+            .title("Welcome")
+            .border_type(BorderType::Thick),
+        _ => Block::default().borders(Borders::ALL).title("Welcome"),
+    };
+    let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
+    f.render_widget(paragraph, area);
+}
+
+fn draw_message_tab<B>(f: &mut Frame<B>, current_tab: &Tabs, room: &mut Room, area: Rect)
+where
+    B: Backend,
+{
+    let messages: Vec<ListItem> = room
+        .messages
+        .messages
+        .iter()
+        .enumerate()
+        .map(|(_i, m)| {
+            let content = vec![Spans::from(vec![
+                Span::styled(format!("{}", m.0), Style::default().fg(Color::Green)),
+                Span::styled(format!("{}", m.1), Style::default().fg(Color::Red)),
+                Span::from(format!("{}", m.2)),
+            ])];
+            ListItem::new(content)
+        })
+        .collect();
+
+    let block_message = match current_tab {
+        Tabs::Messages => Block::default()
+            .borders(Borders::ALL)
+            .title("Messages")
+            .border_type(BorderType::Thick),
+        _ => Block::default().borders(Borders::ALL).title("Messages"),
+    };
+    let messages = List::new(messages)
+        .block(block_message)
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol("> ");
+
+    f.render_stateful_widget(messages, area, &mut room.messages.state);
+}
+
+fn draw_room_tab<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
+where
+    B: Backend,
+{
     let rooms: Vec<ListItem> = app
         .rooms
         .rooms
@@ -163,57 +257,48 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .block(block_rooms)
         .highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .highlight_symbol("> ");
-    f.render_stateful_widget(rooms, chunks[0], &mut app.rooms.state);
 
-    // Message Widget
-    match app.rooms.get_current_room() {
-        Some(room) => {
-            let messages: Vec<ListItem> = room
-                .messages
-                .messages
-                .iter()
-                .enumerate()
-                .map(|(_i, m)| {
-                    let content = vec![Spans::from(vec![
-                        Span::styled(format!("{}", m.0), Style::default().fg(Color::Green)),
-                        Span::styled(format!("{}", m.1), Style::default().fg(Color::Red)),
-                        Span::from(format!("{}", m.2)),
-                    ])];
-                    ListItem::new(content)
-                })
-                .collect();
-
-            let block_message = match app.current_tab {
-                Tabs::Messages => Block::default()
-                    .borders(Borders::ALL)
-                    .title("Messages")
-                    .border_type(BorderType::Thick),
-                _ => Block::default().borders(Borders::ALL).title("Messages"),
-            };
-            let messages = List::new(messages)
-                .block(block_message)
-                .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-                .highlight_symbol("> ");
-
-            f.render_stateful_widget(messages, chunks[1], &mut room.messages.state);
+    //If room is selected render Member list
+    match app.rooms.state.selected() {
+        Some(i) => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(70), Constraint::Percentage(30)].as_ref())
+                .split(area);
+            f.render_stateful_widget(rooms, chunks[0], &mut app.rooms.state);
+            draw_member_tab(f, &app.current_tab, &mut app.rooms.rooms[i], chunks[1]);
         }
         None => {
-            let text = vec![
-                Spans::from("This is a Matrix Tui Client"),
-                Spans::from(""),
-                Spans::from("To switch between tabs use tab key"),
-                Spans::from("To scroll up and down use up and down arrow keys"),
-                Spans::from("To quit the client use q"),
-            ];
-            let block = match app.current_tab {
-                Tabs::Messages => Block::default()
-                    .borders(Borders::ALL)
-                    .title("Welcome")
-                    .border_type(BorderType::Thick),
-                _ => Block::default().borders(Borders::ALL).title("Welcome"),
-            };
-            let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
-            f.render_widget(paragraph, chunks[1]);
+            f.render_stateful_widget(rooms, area, &mut app.rooms.state);
         }
     };
+}
+
+fn draw_member_tab<B>(f: &mut Frame<B>, current_tab: &Tabs, room: &mut Room, area: Rect)
+where
+    B: Backend,
+{
+    let members: Vec<ListItem> = room
+        .members
+        .members
+        .iter()
+        .enumerate()
+        .map(|(_i, m)| {
+            let content = vec![Spans::from(Span::raw(format!("{}", m)))];
+            ListItem::new(content)
+        })
+        .collect();
+
+    let block = match current_tab {
+        Tabs::Members => Block::default()
+            .borders(Borders::ALL)
+            .title("Member")
+            .border_type(BorderType::Thick),
+        _ => Block::default().borders(Borders::ALL).title("Member"),
+    };
+    let members = List::new(members)
+        .block(block)
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol("> ");
+    f.render_stateful_widget(members, area, &mut room.members.state);
 }

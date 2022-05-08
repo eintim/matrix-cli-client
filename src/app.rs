@@ -82,10 +82,59 @@ impl ScrollableMessageList {
     }
 }
 
+pub struct ScrollableMemberList {
+    pub state: ListState,
+    pub members: Vec<String>,
+}
+
+impl ScrollableMemberList {
+    pub fn with_members(members: Vec<String>) -> ScrollableMemberList {
+        ScrollableMemberList {
+            state: ListState::default(),
+            members: members,
+        }
+    }
+
+    pub fn next_member(&mut self) {
+        if self.members.is_empty() {
+            return;
+        }
+        let i = match self.state.selected() {
+            Some(i) => {
+                if i >= self.members.len() - 1 {
+                    0
+                } else {
+                    i + 1
+                }
+            }
+            None => 0,
+        };
+        self.state.select(Some(i));
+    }
+
+    pub fn previous_member(&mut self) {
+        if self.members.is_empty() {
+            return;
+        }
+        let i = match self.state.selected() {
+            Some(i) => {
+                if i == 0 {
+                    self.members.len() - 1
+                } else {
+                    i - 1
+                }
+            }
+            None => 0,
+        };
+        self.state.select(Some(i));
+    }
+}
+
 pub struct Room {
     pub name: String,
     pub id: String,
     pub messages: ScrollableMessageList,
+    pub members: ScrollableMemberList,
 }
 
 impl Room {
@@ -95,12 +144,26 @@ impl Room {
             Err(_) => "Unknown".to_string(),
         };
 
+        let members = match room.joined_members().await {
+            Ok(members) => members,
+            Err(_) => Vec::new(),
+        };
+
+        let member_names = members
+            .into_iter()
+            .map(|member| match member.display_name() {
+                Some(name) => name.to_string(),
+                None => member.user_id().to_string(),
+            })
+            .collect::<Vec<String>>();
+
         //TODO Get past messages
 
         Room {
             name: name,
             id: room.room_id().to_string(),
             messages: ScrollableMessageList::new(),
+            members: ScrollableMemberList::with_members(member_names),
         }
     }
 }
@@ -168,7 +231,7 @@ impl ScrollableRoomList {
 #[derive(PartialEq, Eq)]
 pub enum Tabs {
     Room,
-    //Members,
+    Members,
     Messages,
     //Input,
 }
@@ -233,8 +296,19 @@ impl App {
     pub fn next_tab(&mut self) {
         match self.current_tab {
             Tabs::Room => self.current_tab = Tabs::Messages,
-            Tabs::Messages => self.current_tab = Tabs::Room,
-            //_ => self.current_tab = Tabs::Room,
+            Tabs::Messages => match self.rooms.state.selected() {
+                Some(_) => self.current_tab = Tabs::Members,
+                None => self.current_tab = Tabs::Room,
+            },
+            Tabs::Members => {
+                match self.rooms.get_current_room() {
+                    Some(r) => {
+                        r.members.state.select(None);
+                    }
+                    None => {}
+                }
+                self.current_tab = Tabs::Room;
+            } //_ => self.current_tab = Tabs::Room,
         }
     }
 }
