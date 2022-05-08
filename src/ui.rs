@@ -163,6 +163,9 @@ pub async fn run_ui<B: Backend>(
                         }
                         KeyCode::Enter => match app.rooms.get_current_room() {
                             Some(room) => {
+                                if app.input.is_empty() {
+                                    continue;
+                                }
                                 let room_id = match RoomId::parse(room.id.clone()) {
                                     Ok(room_id) => room_id,
                                     Err(_) => {
@@ -182,6 +185,7 @@ pub async fn run_ui<B: Backend>(
                                     }
                                 };
                                 let message: String = app.input.drain(..).collect();
+
                                 let content = RoomMessageEventContent::text_plain(message);
                                 match room.send(content, None).await {
                                     Ok(_) => (),
