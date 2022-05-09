@@ -33,7 +33,6 @@ pub async fn run_ui<B: Backend>(
     password: String,
     homeserver: Url,
 ) -> io::Result<()> {
-    // let (send_tx, send_rx) = mpsc::channel(100);
     let (recv_tx, mut recv_rx) = mpsc::channel(100);
 
     let client = match Client::new(homeserver).await {
@@ -202,7 +201,6 @@ pub async fn run_ui<B: Backend>(
                         }
                         _ => {}
                     },
-                    //_ => {}
                 }
             }
         }
