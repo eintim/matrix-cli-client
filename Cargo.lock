@@ -1310,6 +1310,7 @@ dependencies = [
 name = "matrix_client"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "clap",
  "crossterm 0.23.2",

@@ -28,14 +28,6 @@ impl ScrollableMessageList {
         }
     }
 
-    // pub fn with_messages(messages: Vec<(String, String)>) -> ScrollableMessageList {
-    //     ScrollableMessageList {
-    //         state: ListState::default(),
-    //         messages: messages,
-    //         mode: MessageViewMode::Follow,
-    //     }
-    // }
-
     pub fn add_message(&mut self, time: String, sender: String, message: String) {
         self.messages.push((time, sender, message));
         // Follow mode
@@ -156,8 +148,6 @@ impl Room {
                 None => member.user_id().to_string(),
             })
             .collect::<Vec<String>>();
-
-        //TODO Get past messages
 
         Room {
             name: name,

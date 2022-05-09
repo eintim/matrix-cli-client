@@ -1,8 +1,10 @@
 use crate::app::{App, Room, Tabs};
+use crate::matrix::*;
 
 use crossterm::event::{self, poll, Event, KeyCode};
 use std::{io, time::Duration};
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::Receiver;
+
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -13,92 +15,26 @@ use tui::{
 };
 
 use matrix_sdk::{
-    config::SyncSettings,
-    room::Room as MatrixRoom,
-    ruma::{
-        events::room::message::{OriginalSyncRoomMessageEvent, RoomMessageEventContent},
-        RoomId,
-    },
-    Client,
+    room::Room as MatrixRoom, ruma::events::room::message::OriginalSyncRoomMessageEvent, Client,
 };
-
-use url::Url;
 
 use unicode_width::UnicodeWidthStr;
 
 pub async fn run_ui<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: App,
-    username: String,
-    password: String,
-    homeserver: Url,
+    client: Client,
+    mut rx: Receiver<(OriginalSyncRoomMessageEvent, MatrixRoom)>,
 ) -> io::Result<()> {
-    // let (send_tx, send_rx) = mpsc::channel(100);
-    let (recv_tx, mut recv_rx) = mpsc::channel(100);
-
-    let client = match Client::new(homeserver).await {
-        Ok(client) => client,
-        Err(_) => {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Could not create client",
-            ));
-        }
-    };
-
-    match client
-        .login(&username, &password, None, Some("Matrix-Tui-Client"))
-        .await
-    {
-        Ok(_) => (),
-        Err(_) => {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Could not login. Invalid password?",
-            ));
-        }
-    };
-
-    //Event Handler
-    client
-        .register_event_handler({
-            let tx = recv_tx.clone();
-            move |ev: OriginalSyncRoomMessageEvent, room: MatrixRoom| {
-                let tx = tx.clone();
-                async move {
-                    match tx.send((ev, room)).await {
-                        Ok(_) => (),
-                        Err(_) => (),
-                    };
-                }
-            }
-        })
-        .await;
-
-    match client.sync_once(SyncSettings::default()).await {
-        Ok(_) => (),
-        Err(_) => {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Unable to sync with homeserver",
-            ));
-        }
-    };
-
     //Get all rooms
     let rooms = client.rooms();
     for room in rooms {
         app.rooms.add_room(room).await;
     }
 
-    let client2 = client.clone();
-    tokio::spawn(async move {
-        client2.sync(SyncSettings::default()).await;
-    });
-
     loop {
         // Check rx
-        if let Some((ev, room)) = recv_rx.try_recv().ok() {
+        if let Some((ev, room)) = rx.try_recv().ok() {
             app.handle_matrix_event(ev, room);
         }
 
@@ -139,13 +75,13 @@ pub async fn run_ui<B: Backend>(
                         }
                         KeyCode::Up => match app.rooms.get_current_room() {
                             Some(room) => {
-                                room.members.next_member();
+                                room.members.previous_member();
                             }
                             None => {}
                         },
                         KeyCode::Down => match app.rooms.get_current_room() {
                             Some(room) => {
-                                room.members.previous_member();
+                                room.members.next_member();
                             }
                             None => {}
                         },
@@ -163,34 +99,8 @@ pub async fn run_ui<B: Backend>(
                         }
                         KeyCode::Enter => match app.rooms.get_current_room() {
                             Some(room) => {
-                                if app.input.is_empty() {
-                                    continue;
-                                }
-                                let room_id = match RoomId::parse(room.id.clone()) {
-                                    Ok(room_id) => room_id,
-                                    Err(_) => {
-                                        return Err(io::Error::new(
-                                            io::ErrorKind::Other,
-                                            "Could not parse room id",
-                                        ));
-                                    }
-                                };
-                                let room = match client.get_joined_room(&room_id) {
-                                    Some(room) => room,
-                                    None => {
-                                        return Err(io::Error::new(
-                                            io::ErrorKind::Other,
-                                            "Unable to get room from server",
-                                        ));
-                                    }
-                                };
                                 let message: String = app.input.drain(..).collect();
-
-                                let content = RoomMessageEventContent::text_plain(message);
-                                match room.send(content, None).await {
-                                    Ok(_) => (),
-                                    Err(_) => (),
-                                };
+                                client.send_message(&room.id, message).await;
                             }
                             None => {}
                         },
@@ -202,7 +112,6 @@ pub async fn run_ui<B: Backend>(
                         }
                         _ => {}
                     },
-                    //_ => {}
                 }
             }
         }
