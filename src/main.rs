@@ -1,19 +1,26 @@
+mod app;
+mod matrix;
+mod ui;
+
 use clap::Parser;
 
 use crate::app::App;
+use crate::matrix::*;
+use crate::ui::run_ui;
 
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+
+use tokio::sync::mpsc;
+
+use matrix_sdk::Client;
+
 use std::io;
 use tui::{backend::CrosstermBackend, Terminal};
 use url::Url;
-
-mod app;
-mod ui;
-use crate::ui::run_ui;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -46,6 +53,17 @@ async fn main() -> io::Result<()> {
         }
     };
 
+    // initialize channel
+    let (tx, rx) = mpsc::channel(100);
+
+    // initialize matrix client
+    let client = match Client::initialize(homeserver_url, args.username, args.password, tx).await {
+        Ok(client) => client,
+        Err(err) => {
+            return Err(io::Error::new(io::ErrorKind::Other, err.to_string()));
+        }
+    };
+
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -55,14 +73,7 @@ async fn main() -> io::Result<()> {
 
     // create app and run ui
     let app = App::new();
-    let res = run_ui(
-        &mut terminal,
-        app,
-        args.username,
-        args.password,
-        homeserver_url,
-    )
-    .await;
+    let res = run_ui(&mut terminal, app, client, rx).await;
 
     // restore terminal
     disable_raw_mode()?;
