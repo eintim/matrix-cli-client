@@ -9,7 +9,7 @@ use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
+    text::{Span, Spans, Text},
     widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, Wrap},
     Frame, Terminal,
 };
@@ -29,7 +29,7 @@ pub async fn run_ui<B: Backend>(
     //Get all rooms
     let rooms = client.rooms();
     for room in rooms {
-        app.rooms.add_room(room).await;
+        app.rooms.add_room(room, client.homeserver().await).await;
     }
 
     loop {
@@ -133,7 +133,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         Some(room) => {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Min(5), Constraint::Max(3)].as_ref())
+                .constraints([Constraint::Min(5), Constraint::Length(3)].as_ref())
                 .split(chunks[1]);
             draw_message_tab(f, &app.current_tab, room, chunks[0]);
             draw_input_tab(f, app, chunks[1]);
@@ -177,12 +177,16 @@ where
         .iter()
         .enumerate()
         .map(|(_i, m)| {
-            let content = vec![Spans::from(vec![
-                Span::styled(format!("{}", m.0), Style::default().fg(Color::Green)),
-                Span::styled(format!("{}", m.1), Style::default().fg(Color::Red)),
-                Span::from(format!("{}", m.2)),
-            ])];
-            ListItem::new(content)
+            let mut text = Text::styled(
+                format!("{}:{}", m.0, m.1),
+                Style::default().fg(Color::Green),
+            );
+            text.extend(Text::raw(format!(
+                "{}",
+                textwrap::fill(&m.2, area.width as usize - 6)
+            )));
+
+            ListItem::new(text)
         })
         .collect();
 

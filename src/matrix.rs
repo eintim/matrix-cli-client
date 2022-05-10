@@ -2,8 +2,11 @@ use matrix_sdk::{
     config::SyncSettings,
     room::Room,
     ruma::{
-        events::room::message::{OriginalSyncRoomMessageEvent, RoomMessageEventContent},
-        RoomId,
+        events::room::{
+            message::{MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent},
+            MediaSource,
+        },
+        OwnedMxcUri, RoomId,
     },
     Client, Error,
 };
@@ -45,6 +48,12 @@ impl ClientExt for Client {
             Ok(_) => (),
             Err(err) => return Err(err),
         };
+
+        match client.sync_once(SyncSettings::default()).await {
+            Ok(_) => (),
+            Err(err) => return Err(err),
+        };
+
         //Event Handler
         client
             .register_event_handler({
@@ -60,11 +69,6 @@ impl ClientExt for Client {
                 }
             })
             .await;
-
-        match client.sync_once(SyncSettings::default()).await {
-            Ok(_) => (),
-            Err(err) => return Err(err),
-        };
 
         let sync_client = client.clone();
         tokio::spawn(async move {
@@ -92,5 +96,57 @@ impl ClientExt for Client {
             Ok(_) => (),
             Err(_) => (),
         };
+    }
+}
+
+pub fn convert_message_type(msgtype: MessageType, homeserver_url: Url) -> String {
+    match msgtype {
+        MessageType::Text(content) => content.body,
+        MessageType::Audio(content) => {
+            "Has send audio: ".to_string()
+                + &content.body
+                + " "
+                + &handle_media_source(content.source, homeserver_url)
+        }
+        MessageType::File(content) => {
+            "Has send file: ".to_string()
+                + &content.body
+                + " "
+                + &handle_media_source(content.source, homeserver_url)
+        }
+        MessageType::Image(content) => {
+            "Has send image: ".to_string()
+                + &content.body
+                + " "
+                + &handle_media_source(content.source, homeserver_url)
+        }
+        MessageType::Video(content) => {
+            "Has send video: ".to_string()
+                + &content.body
+                + " "
+                + &handle_media_source(content.source, homeserver_url)
+        }
+        MessageType::Location(content) => "Has send location: ".to_string() + &content.geo_uri,
+        _ => "Unknown messagetype".to_string(),
+    }
+}
+
+fn handle_media_source(source: MediaSource, homeserver_url: Url) -> String {
+    match source {
+        MediaSource::Plain(mxc) => convert_mxc_to_url(mxc, homeserver_url).to_string(),
+        MediaSource::Encrypted(_) => "".to_string(),
+    }
+}
+
+fn convert_mxc_to_url(mxc: OwnedMxcUri, mut base_url: Url) -> Url {
+    match mxc.parts() {
+        Ok((server_name, media_id)) => {
+            base_url.set_path(&format!(
+                "/_matrix/media/r0/download/{}/{}",
+                server_name, media_id
+            ));
+            base_url
+        }
+        Err(_) => base_url,
     }
 }
