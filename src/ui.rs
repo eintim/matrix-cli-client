@@ -9,7 +9,7 @@ use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
+    text::{Span, Spans, Text},
     widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, Wrap},
     Frame, Terminal,
 };
@@ -177,12 +177,16 @@ where
         .iter()
         .enumerate()
         .map(|(_i, m)| {
-            let content = vec![Spans::from(vec![
-                Span::styled(format!("{}", m.0), Style::default().fg(Color::Green)),
-                Span::styled(format!("{}", m.1), Style::default().fg(Color::Red)),
-                Span::from(format!("{}", m.2)),
-            ])];
-            ListItem::new(content)
+            let mut text = Text::styled(
+                format!("{}:{}", m.0, m.1),
+                Style::default().fg(Color::Green),
+            );
+            text.extend(Text::styled(
+                format!("{}", textwrap::fill(&m.2, area.width as usize - 6)),
+                Style::default().fg(Color::White),
+            ));
+
+            ListItem::new(text)
         })
         .collect();
 
