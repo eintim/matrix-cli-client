@@ -1,6 +1,7 @@
+use crate::matrix::convert_message_type;
+
 use matrix_sdk::{
-    room::Room as MatrixRoom,
-    ruma::events::room::message::{MessageType, OriginalSyncRoomMessageEvent},
+    room::Room as MatrixRoom, ruma::events::room::message::OriginalSyncRoomMessageEvent,
 };
 use tui::widgets::ListState;
 
@@ -305,18 +306,5 @@ impl App {
                 self.current_tab = Tabs::Room;
             }
         }
-    }
-}
-
-fn convert_message_type(msgtype: MessageType) -> String {
-    match msgtype {
-        MessageType::Text(content) => content.body,
-        MessageType::Audio(content) => "Has send audio: ".to_string() + &content.body,
-        //MessageType::Emote(content) => "Has send Sticker: ".to_string() + &content.body,
-        MessageType::File(content) => "Has send file: ".to_string() + &content.body,
-        MessageType::Image(content) => "Has send image: ".to_string() + &content.body,
-        MessageType::Video(content) => "Has send video: ".to_string() + &content.body,
-        MessageType::Location(content) => "Has send location: ".to_string() + &content.geo_uri,
-        _ => "Unknown messagetype".to_string(),
     }
 }

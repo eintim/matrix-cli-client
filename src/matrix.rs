@@ -2,8 +2,11 @@ use matrix_sdk::{
     config::SyncSettings,
     room::Room,
     ruma::{
-        events::room::message::{OriginalSyncRoomMessageEvent, RoomMessageEventContent},
-        RoomId,
+        events::room::{
+            message::{MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent},
+            MediaSource,
+        },
+        OwnedMxcUri, RoomId,
     },
     Client, Error,
 };
@@ -93,4 +96,53 @@ impl ClientExt for Client {
             Err(_) => (),
         };
     }
+}
+
+pub fn convert_message_type(msgtype: MessageType) -> String {
+    match msgtype {
+        MessageType::Text(content) => content.body,
+        MessageType::Audio(content) => {
+            "Has send audio: ".to_string()
+                + &content.body
+                + &" ".to_string()
+                + &handle_media_source(content.source)
+        }
+        //MessageType::Emote(content) => "Has send Sticker: ".to_string() + &content.body,
+        MessageType::File(content) => {
+            "Has send file: ".to_string()
+                + &content.body
+                + &" ".to_string()
+                + &handle_media_source(content.source)
+        }
+        MessageType::Image(content) => {
+            "Has send image: ".to_string()
+                + &content.body
+                + &" ".to_string()
+                + &handle_media_source(content.source)
+        }
+        MessageType::Video(content) => {
+            "Has send video: ".to_string()
+                + &content.body
+                + &" ".to_string()
+                + &handle_media_source(content.source)
+        }
+        MessageType::Location(content) => "Has send location: ".to_string() + &content.geo_uri,
+        _ => "Unknown messagetype".to_string(),
+    }
+}
+
+fn handle_media_source(source: MediaSource) -> String {
+    match source {
+        MediaSource::Plain(mxc) => convert_mxc_to_url(mxc).to_string(),
+        MediaSource::Encrypted(_) => "".to_string(),
+    }
+}
+
+fn convert_mxc_to_url(mxc: OwnedMxcUri) -> Url {
+    let mut url = Url::parse(
+        "https://chat.eintim.de/_matrix/media/r0/download/eintim.de/pAopWnbWowuYUWZcFLpgQoSN",
+    )
+    .unwrap();
+
+    return url;
 }
