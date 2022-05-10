@@ -48,6 +48,12 @@ impl ClientExt for Client {
             Ok(_) => (),
             Err(err) => return Err(err),
         };
+
+        match client.sync_once(SyncSettings::default()).await {
+            Ok(_) => (),
+            Err(err) => return Err(err),
+        };
+
         //Event Handler
         client
             .register_event_handler({
@@ -63,11 +69,6 @@ impl ClientExt for Client {
                 }
             })
             .await;
-
-        match client.sync_once(SyncSettings::default()).await {
-            Ok(_) => (),
-            Err(err) => return Err(err),
-        };
 
         let sync_client = client.clone();
         tokio::spawn(async move {

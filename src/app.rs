@@ -234,15 +234,17 @@ pub struct App {
     pub current_tab: Tabs,
     pub input: String,
     homeserver_url: Url,
+    full_username: String,
 }
 
 impl App {
-    pub fn new(homeserver_url: Url) -> App {
+    pub fn new(homeserver_url: Url, full_username: String) -> App {
         App {
             rooms: ScrollableRoomList::new(),
             current_tab: Tabs::Room,
             input: String::new(),
             homeserver_url: homeserver_url,
+            full_username: full_username,
         }
     }
     pub fn handle_matrix_event(
@@ -258,15 +260,27 @@ impl App {
         let datetime: DateTime<Utc> = system_time.into();
 
         let sender = event.sender.to_string();
-        let message = event.content;
+        let message_content = event.content;
+        let message = convert_message_type(message_content.msgtype, self.homeserver_url.clone());
 
         match self.rooms.rooms.iter_mut().find(|r| r.id == room) {
             Some(r) => {
                 r.messages.add_message(
                     datetime.format("%d/%m/%Y %T").to_string(),
-                    sender,
-                    convert_message_type(message.msgtype, self.homeserver_url.clone()),
+                    sender.clone(),
+                    message.clone(),
                 );
+                if sender != self.full_username {
+                    match notify_rust::Notification::new()
+                        .summary(&sender)
+                        .body(&message)
+                        .icon("matrix")
+                        .show()
+                    {
+                        Ok(_) => {}
+                        Err(_) => {}
+                    };
+                }
             }
             None => {}
         }
