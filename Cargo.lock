@@ -1534,6 +1534,7 @@ dependencies = [
  "chrono",
  "clap",
  "crossterm 0.23.2",
+ "futures",
  "matrix-sdk",
  "notify-rust",
  "textwrap",

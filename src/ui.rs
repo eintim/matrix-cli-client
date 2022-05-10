@@ -29,7 +29,7 @@ pub async fn run_ui<B: Backend>(
     //Get all rooms
     let rooms = client.rooms();
     for room in rooms {
-        app.rooms.add_room(room).await;
+        app.rooms.add_room(room, client.homeserver().await).await;
     }
 
     loop {

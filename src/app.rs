@@ -1,13 +1,19 @@
 use crate::matrix::convert_message_type;
+use futures::{pin_mut, StreamExt};
 
 use matrix_sdk::{
-    room::Room as MatrixRoom, ruma::events::room::message::OriginalSyncRoomMessageEvent,
+    room::Room as MatrixRoom,
+    ruma::events::{
+        room::message::OriginalSyncRoomMessageEvent, AnySyncMessageLikeEvent, AnySyncRoomEvent,
+        SyncMessageLikeEvent,
+    },
 };
 use tui::widgets::ListState;
 
 use chrono::offset::Utc;
 use chrono::DateTime;
 
+use std::time::SystemTime;
 use url::Url;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -29,6 +35,17 @@ impl ScrollableMessageList {
             messages: Vec::new(),
             mode: MessageViewMode::Follow,
         }
+    }
+
+    pub fn with_messages(messages: Vec<(String, String, String)>) -> ScrollableMessageList {
+        let mut list = ScrollableMessageList {
+            state: ListState::default(),
+            messages: messages,
+            mode: MessageViewMode::Follow,
+        };
+        list.state
+            .select(Some(list.messages.len().saturating_sub(1)));
+        list
     }
 
     pub fn add_message(&mut self, time: String, sender: String, message: String) {
@@ -133,7 +150,7 @@ pub struct Room {
 }
 
 impl Room {
-    pub async fn new(room: MatrixRoom) -> Room {
+    pub async fn new(room: MatrixRoom, homeserver_url: Url) -> Room {
         let name = match room.display_name().await {
             Ok(name) => name.to_string(),
             Err(_) => "Unknown".to_string(),
@@ -152,12 +169,53 @@ impl Room {
             })
             .collect::<Vec<String>>();
 
-        Room {
-            name: name,
-            id: room.room_id().to_string(),
-            messages: ScrollableMessageList::new(),
-            members: ScrollableMemberList::with_members(member_names),
-        }
+        //Get old message
+        let room = match room.timeline_backward().await {
+            Ok(timeline) => {
+                let mut messages: Vec<(String, String, String)> = Vec::new();
+
+                pin_mut!(timeline);
+                while let Some(event) = timeline.next().await {
+                    let event = event.unwrap();
+                    let event = event.event.deserialize().unwrap();
+                    if let AnySyncRoomEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(
+                        SyncMessageLikeEvent::Original(event),
+                    )) = event
+                    {
+                        let system_time = match event.origin_server_ts.to_system_time() {
+                            Some(time) => time,
+                            None => SystemTime::UNIX_EPOCH,
+                        };
+                        let sender = event.sender.to_string();
+                        let datetime: DateTime<Utc> = system_time.into();
+
+                        messages.push((
+                            datetime.format("%d/%m/%Y %T").to_string(),
+                            sender,
+                            (format!(
+                                "{}",
+                                convert_message_type(event.content.msgtype, homeserver_url.clone())
+                            ))
+                            .to_string(),
+                        ));
+                    }
+                }
+                messages.reverse();
+                Room {
+                    name: name,
+                    id: room.room_id().to_string(),
+                    messages: ScrollableMessageList::with_messages(messages),
+                    members: ScrollableMemberList::with_members(member_names),
+                }
+            }
+            Err(_) => Room {
+                name: name,
+                id: room.room_id().to_string(),
+                messages: ScrollableMessageList::new(),
+                members: ScrollableMemberList::with_members(member_names),
+            },
+        };
+        return room;
     }
 }
 
@@ -174,8 +232,8 @@ impl ScrollableRoomList {
         }
     }
 
-    pub async fn add_room(&mut self, room: MatrixRoom) {
-        let room = Room::new(room).await;
+    pub async fn add_room(&mut self, room: MatrixRoom, homeserver_url: Url) {
+        let room = Room::new(room, homeserver_url).await;
         self.rooms.push(room);
     }
 
