@@ -199,8 +199,14 @@ impl Room {
 
                 pin_mut!(timeline);
                 while let Some(event) = timeline.next().await {
-                    let event = event.unwrap();
-                    let event = event.event.deserialize().unwrap();
+                    let event = match event {
+                        Ok(event) => event,
+                        Err(_) => break,
+                    };
+                    let event = match event.event.deserialize() {
+                        Ok(event) => event,
+                        Err(_) => break,
+                    };
                     if let AnySyncRoomEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(
                         SyncMessageLikeEvent::Original(event),
                     )) = event
@@ -210,10 +216,10 @@ impl Room {
                             None => SystemTime::UNIX_EPOCH,
                         };
                         let sender = event.sender.to_string();
-                        let datetime: DateTime<Utc> = system_time.into();
+                        let date_time: DateTime<Utc> = system_time.into();
 
                         messages.push((
-                            datetime.format("%d/%m/%Y %T").to_string(),
+                            date_time.format("%d/%m/%Y %T").to_string(),
                             sender,
                             (format!(
                                 "{}",
