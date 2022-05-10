@@ -29,6 +29,7 @@ pub struct ScrollableMessageList {
 }
 
 impl ScrollableMessageList {
+    /// Create a new ScrollableMessageList
     pub fn new() -> ScrollableMessageList {
         ScrollableMessageList {
             state: ListState::default(),
@@ -37,6 +38,7 @@ impl ScrollableMessageList {
         }
     }
 
+    /// Create a new ScrollableMessageList with the given messages.
     pub fn with_messages(messages: Vec<(String, String, String)>) -> ScrollableMessageList {
         let mut list = ScrollableMessageList {
             state: ListState::default(),
@@ -48,6 +50,12 @@ impl ScrollableMessageList {
         list
     }
 
+    /// Add a message to the list.
+    ///
+    /// # Arguments
+    /// * `time` - The time the message was sent.
+    /// * `sender` - The sender of the message.
+    /// * `message` - The message.
     pub fn add_message(&mut self, time: String, sender: String, message: String) {
         self.messages.push((time, sender, message));
         // Follow mode
@@ -56,6 +64,7 @@ impl ScrollableMessageList {
         }
     }
 
+    /// Change the selected message to the next one
     pub fn next_message(&mut self) {
         if self.messages.is_empty() {
             return;
@@ -75,6 +84,7 @@ impl ScrollableMessageList {
         self.state.select(Some(i));
     }
 
+    /// Change the selected message to the previous one
     pub fn previous_message(&mut self) {
         if self.messages.is_empty() {
             return;
@@ -100,6 +110,10 @@ pub struct ScrollableMemberList {
 }
 
 impl ScrollableMemberList {
+    /// Create a new member list
+    ///
+    /// # Arguments
+    /// * `members` - A vector of member names
     pub fn with_members(members: Vec<String>) -> ScrollableMemberList {
         ScrollableMemberList {
             state: ListState::default(),
@@ -107,6 +121,7 @@ impl ScrollableMemberList {
         }
     }
 
+    /// Change the selected member to the next one
     pub fn next_member(&mut self) {
         if self.members.is_empty() {
             return;
@@ -124,6 +139,7 @@ impl ScrollableMemberList {
         self.state.select(Some(i));
     }
 
+    /// Change the selected member to the previous one
     pub fn previous_member(&mut self) {
         if self.members.is_empty() {
             return;
@@ -150,10 +166,16 @@ pub struct Room {
 }
 
 impl Room {
+    /// Create a new room with the given name and id.
+    /// Gets past members and past messages from the room.
+    ///
+    /// # Arguments
+    /// * `name` - The room to create.
+    /// * `homeserver_url` - The homeserver url.
     pub async fn new(room: MatrixRoom, homeserver_url: Url) -> Room {
         let name = match room.display_name().await {
             Ok(name) => name.to_string(),
-            Err(_) => "Unknown".to_string(),
+            Err(_) => "Unknown name".to_string(),
         };
 
         let members = match room.joined_members().await {
@@ -170,7 +192,7 @@ impl Room {
             .collect::<Vec<String>>();
 
         //Get old message
-        let room = match room.timeline_backward().await {
+        match room.timeline_backward().await {
             Ok(timeline) => {
                 let mut messages: Vec<(String, String, String)> = Vec::new();
 
@@ -214,17 +236,18 @@ impl Room {
                 messages: ScrollableMessageList::new(),
                 members: ScrollableMemberList::with_members(member_names),
             },
-        };
-        return room;
+        }
     }
 }
 
+/// Scrollable list of rooms
 pub struct ScrollableRoomList {
     pub state: ListState,
     pub rooms: Vec<Room>,
 }
 
 impl ScrollableRoomList {
+    /// Create a new room list
     pub fn new() -> ScrollableRoomList {
         ScrollableRoomList {
             state: ListState::default(),
@@ -232,11 +255,17 @@ impl ScrollableRoomList {
         }
     }
 
+    /// Add a new room to the list
+    ///
+    /// # Arguments
+    /// * `room` - The room to add
+    /// * `homeserver_url` - The homeserver url
     pub async fn add_room(&mut self, room: MatrixRoom, homeserver_url: Url) {
         let room = Room::new(room, homeserver_url).await;
         self.rooms.push(room);
     }
 
+    /// Change the selected room to the next one
     pub fn next_room(&mut self) {
         if self.rooms.is_empty() {
             return;
@@ -254,6 +283,7 @@ impl ScrollableRoomList {
         self.state.select(Some(i));
     }
 
+    /// Change the selected room to the previous one
     pub fn previous_room(&mut self) {
         if self.rooms.is_empty() {
             return;
@@ -270,6 +300,8 @@ impl ScrollableRoomList {
         };
         self.state.select(Some(i));
     }
+
+    /// Returns the selected room
     pub fn get_current_room(&mut self) -> Option<&mut Room> {
         let i = match self.state.selected() {
             Some(i) => i,
@@ -279,6 +311,7 @@ impl ScrollableRoomList {
     }
 }
 
+/// Selectable tabs in the UI
 #[derive(PartialEq, Eq)]
 pub enum Tabs {
     Room,
@@ -287,6 +320,7 @@ pub enum Tabs {
     Input,
 }
 
+/// The state of the application
 pub struct App {
     pub rooms: ScrollableRoomList,
     pub current_tab: Tabs,
@@ -296,6 +330,14 @@ pub struct App {
 }
 
 impl App {
+    /// Returns a new App instance with the given homeserver url and username.
+    ///
+    /// # Arguments
+    /// * `homeserver_url` - The homeserver url to use.
+    /// * `username` - The username to use.
+    ///
+    /// # Returns
+    /// A new App instance.
     pub fn new(homeserver_url: Url, full_username: String) -> App {
         App {
             rooms: ScrollableRoomList::new(),
@@ -305,11 +347,14 @@ impl App {
             full_username: full_username,
         }
     }
-    pub fn handle_matrix_event(
-        &mut self,
-        event: OriginalSyncRoomMessageEvent,
-        room: matrix_sdk::room::Room,
-    ) {
+
+    /// Handles OriginalSyncRoomMessage events.
+    /// Takes data from the event and adds it to room.
+    /// Throws system notifications if the event is a message.
+    /// # Arguments
+    /// * `event` - The event to handle.
+    /// * `room` - The room to handle the event in.
+    pub fn handle_matrix_event(&mut self, event: OriginalSyncRoomMessageEvent, room: MatrixRoom) {
         let room = room.room_id().to_string();
         let system_time = match event.origin_server_ts.to_system_time() {
             Some(time) => time,
@@ -344,17 +389,12 @@ impl App {
         }
     }
 
-    pub fn current_room_next_message(&mut self) {
-        if let Some(r) = self.rooms.get_current_room() {
-            r.messages.next_message();
-        }
-    }
-    pub fn current_room_previous_message(&mut self) {
-        if let Some(r) = self.rooms.get_current_room() {
-            r.messages.previous_message();
-        }
-    }
-
+    /// Switches to the next tab.
+    /// If room is selected:
+    /// Room -> Messages -> Input -> Members -> Room -> ...
+    ///
+    /// No room selected:
+    /// Room -> WelcomeScreen -> Room -> ...
     pub fn next_tab(&mut self) {
         match self.current_tab {
             Tabs::Room => self.current_tab = Tabs::Messages,

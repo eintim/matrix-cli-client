@@ -20,6 +20,8 @@ use matrix_sdk::{
 
 use unicode_width::UnicodeWidthStr;
 
+/// The main UI loop.
+/// This function loops until the user quits the application.
 pub async fn run_ui<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: App,
@@ -62,8 +64,18 @@ pub async fn run_ui<B: Backend>(
                         KeyCode::Esc => {
                             return Ok(());
                         }
-                        KeyCode::Up => app.current_room_previous_message(),
-                        KeyCode::Down => app.current_room_next_message(),
+                        KeyCode::Up => match app.rooms.get_current_room() {
+                            Some(room) => {
+                                room.messages.previous_message();
+                            }
+                            None => {}
+                        },
+                        KeyCode::Down => match app.rooms.get_current_room() {
+                            Some(room) => {
+                                room.messages.next_message();
+                            }
+                            None => {}
+                        },
                         KeyCode::Tab => {
                             app.next_tab();
                         }
