@@ -133,7 +133,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         Some(room) => {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Min(5), Constraint::Max(3)].as_ref())
+                .constraints([Constraint::Min(5), Constraint::Length(3)].as_ref())
                 .split(chunks[1]);
             draw_message_tab(f, &app.current_tab, room, chunks[0]);
             draw_input_tab(f, app, chunks[1]);
@@ -181,10 +181,10 @@ where
                 format!("{}:{}", m.0, m.1),
                 Style::default().fg(Color::Green),
             );
-            text.extend(Text::styled(
-                format!("{}", textwrap::fill(&m.2, area.width as usize - 6)),
-                Style::default().fg(Color::White),
-            ));
+            text.extend(Text::raw(format!(
+                "{}",
+                textwrap::fill(&m.2, area.width as usize - 6)
+            )));
 
             ListItem::new(text)
         })

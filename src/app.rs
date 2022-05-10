@@ -343,6 +343,7 @@ impl App {
             None => {}
         }
     }
+
     pub fn current_room_next_message(&mut self) {
         if let Some(r) = self.rooms.get_current_room() {
             r.messages.next_message();
