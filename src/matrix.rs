@@ -98,51 +98,54 @@ impl ClientExt for Client {
     }
 }
 
-pub fn convert_message_type(msgtype: MessageType) -> String {
+pub fn convert_message_type(msgtype: MessageType, homeserver_url: Url) -> String {
     match msgtype {
         MessageType::Text(content) => content.body,
         MessageType::Audio(content) => {
             "Has send audio: ".to_string()
                 + &content.body
-                + &" ".to_string()
-                + &handle_media_source(content.source)
+                + " "
+                + &handle_media_source(content.source, homeserver_url)
         }
-        //MessageType::Emote(content) => "Has send Sticker: ".to_string() + &content.body,
         MessageType::File(content) => {
             "Has send file: ".to_string()
                 + &content.body
-                + &" ".to_string()
-                + &handle_media_source(content.source)
+                + " "
+                + &handle_media_source(content.source, homeserver_url)
         }
         MessageType::Image(content) => {
             "Has send image: ".to_string()
                 + &content.body
-                + &" ".to_string()
-                + &handle_media_source(content.source)
+                + " "
+                + &handle_media_source(content.source, homeserver_url)
         }
         MessageType::Video(content) => {
             "Has send video: ".to_string()
                 + &content.body
-                + &" ".to_string()
-                + &handle_media_source(content.source)
+                + " "
+                + &handle_media_source(content.source, homeserver_url)
         }
         MessageType::Location(content) => "Has send location: ".to_string() + &content.geo_uri,
         _ => "Unknown messagetype".to_string(),
     }
 }
 
-fn handle_media_source(source: MediaSource) -> String {
+fn handle_media_source(source: MediaSource, homeserver_url: Url) -> String {
     match source {
-        MediaSource::Plain(mxc) => convert_mxc_to_url(mxc).to_string(),
+        MediaSource::Plain(mxc) => convert_mxc_to_url(mxc, homeserver_url).to_string(),
         MediaSource::Encrypted(_) => "".to_string(),
     }
 }
 
-fn convert_mxc_to_url(mxc: OwnedMxcUri) -> Url {
-    let mut url = Url::parse(
-        "https://chat.eintim.de/_matrix/media/r0/download/eintim.de/pAopWnbWowuYUWZcFLpgQoSN",
-    )
-    .unwrap();
-
-    return url;
+fn convert_mxc_to_url(mxc: OwnedMxcUri, mut base_url: Url) -> Url {
+    match mxc.parts() {
+        Ok((server_name, media_id)) => {
+            base_url.set_path(&format!(
+                "/_matrix/media/r0/download/{}/{}",
+                server_name, media_id
+            ));
+            base_url
+        }
+        Err(_) => base_url,
+    }
 }

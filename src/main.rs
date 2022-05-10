@@ -57,12 +57,13 @@ async fn main() -> io::Result<()> {
     let (tx, rx) = mpsc::channel(100);
 
     // initialize matrix client
-    let client = match Client::initialize(homeserver_url, args.username, args.password, tx).await {
-        Ok(client) => client,
-        Err(err) => {
-            return Err(io::Error::new(io::ErrorKind::Other, err.to_string()));
-        }
-    };
+    let client =
+        match Client::initialize(homeserver_url.clone(), args.username, args.password, tx).await {
+            Ok(client) => client,
+            Err(err) => {
+                return Err(io::Error::new(io::ErrorKind::Other, err.to_string()));
+            }
+        };
 
     // setup terminal
     enable_raw_mode()?;
@@ -72,7 +73,7 @@ async fn main() -> io::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run ui
-    let app = App::new();
+    let app = App::new(homeserver_url);
     let res = run_ui(&mut terminal, app, client, rx).await;
 
     // restore terminal

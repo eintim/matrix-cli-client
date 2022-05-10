@@ -8,6 +8,8 @@ use tui::widgets::ListState;
 use chrono::offset::Utc;
 use chrono::DateTime;
 
+use url::Url;
+
 #[derive(Debug, PartialEq, Eq)]
 enum MessageViewMode {
     Follow,
@@ -229,25 +231,19 @@ pub enum Tabs {
 
 pub struct App {
     pub rooms: ScrollableRoomList,
-    pub logged_in: bool,
     pub current_tab: Tabs,
     pub input: String,
-}
-
-impl Default for App {
-    fn default() -> App {
-        App {
-            rooms: ScrollableRoomList::new(),
-            logged_in: false,
-            current_tab: Tabs::Room,
-            input: String::new(),
-        }
-    }
+    homeserver_url: Url,
 }
 
 impl App {
-    pub fn new() -> App {
-        App::default()
+    pub fn new(homeserver_url: Url) -> App {
+        App {
+            rooms: ScrollableRoomList::new(),
+            current_tab: Tabs::Room,
+            input: String::new(),
+            homeserver_url: homeserver_url,
+        }
     }
     pub fn handle_matrix_event(
         &mut self,
@@ -269,7 +265,7 @@ impl App {
                 r.messages.add_message(
                     datetime.format("%d/%m/%Y %T").to_string(),
                     sender,
-                    convert_message_type(message.msgtype),
+                    convert_message_type(message.msgtype, self.homeserver_url.clone()),
                 );
             }
             None => {}
