@@ -7,6 +7,7 @@ use matrix_sdk::{
         room::message::OriginalSyncRoomMessageEvent, AnySyncMessageLikeEvent, AnySyncRoomEvent,
         SyncMessageLikeEvent,
     },
+    Client,
 };
 use tui::widgets::ListState;
 
@@ -325,26 +326,17 @@ pub struct App {
     pub rooms: ScrollableRoomList,
     pub current_tab: Tabs,
     pub input: String,
-    homeserver_url: Url,
-    full_username: String,
 }
 
 impl App {
     /// Returns a new App instance with the given homeserver url and username.
-    ///
-    /// # Arguments
-    /// * `homeserver_url` - The homeserver url to use.
-    /// * `username` - The username to use.
-    ///
     /// # Returns
     /// A new App instance.
-    pub fn new(homeserver_url: Url, full_username: String) -> App {
+    pub fn new() -> App {
         App {
             rooms: ScrollableRoomList::new(),
             current_tab: Tabs::Room,
             input: String::new(),
-            homeserver_url: homeserver_url,
-            full_username: full_username,
         }
     }
 
@@ -354,7 +346,13 @@ impl App {
     /// # Arguments
     /// * `event` - The event to handle.
     /// * `room` - The room to handle the event in.
-    pub fn handle_matrix_event(&mut self, event: OriginalSyncRoomMessageEvent, room: MatrixRoom) {
+    /// * `client` - The client used to receive messages.
+    pub async fn handle_matrix_event(
+        &mut self,
+        event: OriginalSyncRoomMessageEvent,
+        room: MatrixRoom,
+        client: Client,
+    ) {
         let room = room.room_id().to_string();
         let system_time = match event.origin_server_ts.to_system_time() {
             Some(time) => time,
@@ -364,7 +362,7 @@ impl App {
 
         let sender = event.sender.to_string();
         let message_content = event.content;
-        let message = convert_message_type(message_content.msgtype, self.homeserver_url.clone());
+        let message = convert_message_type(message_content.msgtype, client.homeserver().await);
 
         match self.rooms.rooms.iter_mut().find(|r| r.id == room) {
             Some(r) => {
@@ -373,7 +371,11 @@ impl App {
                     sender.clone(),
                     message.clone(),
                 );
-                if sender != self.full_username {
+                let current_user = match client.user_id().await {
+                    Some(user_id) => user_id.to_string(),
+                    None => "".to_string(),
+                };
+                if sender != current_user {
                     match notify_rust::Notification::new()
                         .summary(&sender)
                         .body(&message)

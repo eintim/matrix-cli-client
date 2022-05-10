@@ -22,7 +22,7 @@ pub trait ClientExt {
         home_server: Url,
         username: String,
         password: String,
-        tx: Sender<(OriginalSyncRoomMessageEvent, Room)>,
+        tx: Sender<(OriginalSyncRoomMessageEvent, Room, Client)>,
     ) -> Result<Client, Error>;
     async fn send_message(&self, room_id: &String, message: String);
 }
@@ -33,7 +33,7 @@ impl ClientExt for Client {
         home_server: Url,
         username: String,
         password: String,
-        tx: Sender<(OriginalSyncRoomMessageEvent, Room)>,
+        tx: Sender<(OriginalSyncRoomMessageEvent, Room, Client)>,
     ) -> Result<Client, Error> {
         let client = match Client::new(home_server).await {
             Ok(client) => client,
@@ -58,10 +58,10 @@ impl ClientExt for Client {
         client
             .register_event_handler({
                 let tx = tx.clone();
-                move |ev: OriginalSyncRoomMessageEvent, room: Room| {
+                move |ev: OriginalSyncRoomMessageEvent, room: Room, client: Client| {
                     let tx = tx.clone();
                     async move {
-                        match tx.send((ev, room)).await {
+                        match tx.send((ev, room, client)).await {
                             Ok(_) => (),
                             Err(_) => (),
                         };

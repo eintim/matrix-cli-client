@@ -26,7 +26,7 @@ pub async fn run_ui<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: App,
     client: Client,
-    mut rx: Receiver<(OriginalSyncRoomMessageEvent, MatrixRoom)>,
+    mut rx: Receiver<(OriginalSyncRoomMessageEvent, MatrixRoom, Client)>,
 ) -> io::Result<()> {
     //Get all rooms
     let rooms = client.rooms();
@@ -36,8 +36,8 @@ pub async fn run_ui<B: Backend>(
 
     loop {
         // Check rx
-        if let Some((ev, room)) = rx.try_recv().ok() {
-            app.handle_matrix_event(ev, room);
+        if let Some((ev, room, client)) = rx.try_recv().ok() {
+            app.handle_matrix_event(ev, room, client).await;
         }
 
         terminal.draw(|f| ui(f, &mut app))?;
