@@ -9,6 +9,7 @@ use matrix_sdk::{
     },
     Client,
 };
+
 use tui::widgets::ListState;
 
 use chrono::offset::Utc;
@@ -52,14 +53,14 @@ impl ScrollableMessageList {
     }
 
     /// Add a message to the list.
-    ///
+    /// If Follow mode is active, the cursor will be moved to the newest message
     /// # Arguments
     /// * `time` - The time the message was sent.
     /// * `sender` - The sender of the message.
     /// * `message` - The message.
     pub fn add_message(&mut self, time: String, sender: String, message: String) {
         self.messages.push((time, sender, message));
-        // Follow mode
+
         if self.mode == MessageViewMode::Follow {
             self.state.select(Some(self.messages.len() - 1));
         }
@@ -332,17 +333,34 @@ pub struct App {
     pub rooms: ScrollableRoomList,
     pub current_tab: Tabs,
     pub input: String,
+    pub client: Client,
 }
 
 impl App {
     /// Returns a new App instance with the given homeserver url and username.
+    /// Load rooms from client.
+    /// # Arguments
+    /// * `client` - The client to use
     /// # Returns
     /// A new App instance.
-    pub fn new() -> App {
-        App {
+    pub async fn new(client: Client) -> App {
+        let mut app = App {
             rooms: ScrollableRoomList::new(),
             current_tab: Tabs::Room,
             input: String::new(),
+            client: client,
+        };
+        app.load_rooms().await;
+        return app;
+    }
+
+    /// Load the rooms from the homeserver and add them to the room list.
+    async fn load_rooms(&mut self) {
+        let rooms = self.client.rooms();
+        for room in rooms {
+            self.rooms
+                .add_room(room, self.client.homeserver().await)
+                .await;
         }
     }
 

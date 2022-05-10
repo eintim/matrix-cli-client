@@ -25,15 +25,8 @@ use unicode_width::UnicodeWidthStr;
 pub async fn run_ui<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: App,
-    client: Client,
     mut rx: Receiver<(OriginalSyncRoomMessageEvent, MatrixRoom, Client)>,
 ) -> io::Result<()> {
-    //Get all rooms
-    let rooms = client.rooms();
-    for room in rooms {
-        app.rooms.add_room(room, client.homeserver().await).await;
-    }
-
     loop {
         // Check rx
         if let Some((ev, room, client)) = rx.try_recv().ok() {
@@ -112,7 +105,7 @@ pub async fn run_ui<B: Backend>(
                         KeyCode::Enter => match app.rooms.get_current_room() {
                             Some(room) => {
                                 let message: String = app.input.drain(..).collect();
-                                client.send_message(&room.id, message).await;
+                                app.client.send_message(&room.id, message).await;
                             }
                             None => {}
                         },
@@ -130,6 +123,11 @@ pub async fn run_ui<B: Backend>(
     }
 }
 
+/// The main UI.
+/// Defines Layout and draws widgets.
+/// # Arguments
+/// * `f` - The frame to draw on.
+/// * `app` - The application state.
 fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -156,6 +154,11 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     };
 }
 
+/// Draws the welcome widget
+/// # Arguments
+/// * `f` - The frame to draw on.
+/// * `current_tab` - The current tab.
+/// * `area` - The area to draw on.
 fn draw_welcome_tab<B>(f: &mut Frame<B>, current_tab: &Tabs, area: Rect)
 where
     B: Backend,
@@ -179,6 +182,11 @@ where
     f.render_widget(paragraph, area);
 }
 
+/// Draws the message widget
+/// # Arguments
+/// * `f` - The frame to draw on.
+/// * `current_tab` - The current tab.
+/// * `area` - The area to draw on.
 fn draw_message_tab<B>(f: &mut Frame<B>, current_tab: &Tabs, room: &mut Room, area: Rect)
 where
     B: Backend,
@@ -217,6 +225,12 @@ where
     f.render_stateful_widget(messages, area, &mut room.messages.state);
 }
 
+/// Draws the room widget
+/// If a room is selected, it will draw the members widget.
+/// # Arguments
+/// * `f` - The frame to draw on.
+/// * `current_tab` - The current tab.
+/// * `area` - The area to draw on.
 fn draw_room_tab<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
 where
     B: Backend,
@@ -260,6 +274,11 @@ where
     };
 }
 
+/// Draws the member widget
+/// # Arguments
+/// * `f` - The frame to draw on.
+/// * `current_tab` - The current tab.
+/// * `area` - The area to draw on.
 fn draw_member_tab<B>(f: &mut Frame<B>, current_tab: &Tabs, room: &mut Room, area: Rect)
 where
     B: Backend,

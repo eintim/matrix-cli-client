@@ -29,6 +29,12 @@ pub trait ClientExt {
 
 #[async_trait]
 impl ClientExt for Client {
+    /// Initialize the matrix client
+    /// # Arguments
+    /// * `home_server` - The homeserver url
+    /// * `username` - The username
+    /// * `password` - The password
+    /// * `tx` - The channel to send message events to
     async fn initialize(
         home_server: Url,
         username: String,
@@ -41,6 +47,7 @@ impl ClientExt for Client {
                 return Err(Error::Http(err));
             }
         };
+
         match client
             .login(&username, &password, None, Some("Matrix-Tui-Client"))
             .await
@@ -54,7 +61,7 @@ impl ClientExt for Client {
             Err(err) => return Err(err),
         };
 
-        //Event Handler
+        // Register Event Handler
         client
             .register_event_handler({
                 let tx = tx.clone();
@@ -70,6 +77,7 @@ impl ClientExt for Client {
             })
             .await;
 
+        // Clone client to endlessly sync with server to get events
         let sync_client = client.clone();
         tokio::spawn(async move {
             sync_client.sync(SyncSettings::default()).await;
@@ -78,6 +86,10 @@ impl ClientExt for Client {
         return Ok(client);
     }
 
+    /// Send a message to a room
+    /// # Arguments
+    /// * `room_id` - The room id
+    /// * `message` - The message to send
     async fn send_message(&self, room_id: &String, message: String) {
         if message.is_empty() {
             return;
@@ -99,6 +111,11 @@ impl ClientExt for Client {
     }
 }
 
+/// Convert MessageType to a readable string
+///
+/// # Arguments
+/// * `message_type` - The message type
+/// * `homeserver_url` - The homeserver url
 pub fn convert_message_type(msgtype: MessageType, homeserver_url: Url) -> String {
     match msgtype {
         MessageType::Text(content) => content.body,
