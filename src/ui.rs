@@ -20,22 +20,23 @@ use matrix_sdk::{
 
 use unicode_width::UnicodeWidthStr;
 
+/// The main UI loop.
+/// This function loops until the user quits the application.
+/// # Arguments
+///  * `termial` - The terminal to use
+/// * `app` - The application to use
+/// * `rx` - The channel to receive events from
+/// # Returns
+/// * `Result<(), io::Error>` - The result of the operation
 pub async fn run_ui<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: App,
-    client: Client,
-    mut rx: Receiver<(OriginalSyncRoomMessageEvent, MatrixRoom)>,
+    mut rx: Receiver<(OriginalSyncRoomMessageEvent, MatrixRoom, Client)>,
 ) -> io::Result<()> {
-    //Get all rooms
-    let rooms = client.rooms();
-    for room in rooms {
-        app.rooms.add_room(room, client.homeserver().await).await;
-    }
-
     loop {
         // Check rx
-        if let Some((ev, room)) = rx.try_recv().ok() {
-            app.handle_matrix_event(ev, room);
+        if let Ok((ev, room, client)) = rx.try_recv() {
+            app.handle_matrix_event(ev, room, client).await;
         }
 
         terminal.draw(|f| ui(f, &mut app))?;
@@ -43,6 +44,7 @@ pub async fn run_ui<B: Backend>(
         if poll(Duration::from_millis(10))? {
             if let Event::Key(key) = event::read()? {
                 match app.current_tab {
+                    // Control in room tab
                     Tabs::Room => match key.code {
                         KeyCode::Esc => {
                             return Ok(());
@@ -58,17 +60,29 @@ pub async fn run_ui<B: Backend>(
                         }
                         _ => {}
                     },
+                    // Control in message tab
                     Tabs::Messages => match key.code {
                         KeyCode::Esc => {
                             return Ok(());
                         }
-                        KeyCode::Up => app.current_room_previous_message(),
-                        KeyCode::Down => app.current_room_next_message(),
+                        KeyCode::Up => match app.rooms.get_current_room() {
+                            Some(room) => {
+                                room.messages.previous_message();
+                            }
+                            None => {}
+                        },
+                        KeyCode::Down => match app.rooms.get_current_room() {
+                            Some(room) => {
+                                room.messages.next_message();
+                            }
+                            None => {}
+                        },
                         KeyCode::Tab => {
                             app.next_tab();
                         }
                         _ => {}
                     },
+                    // Control in members tab
                     Tabs::Members => match key.code {
                         KeyCode::Esc => {
                             return Ok(());
@@ -90,6 +104,7 @@ pub async fn run_ui<B: Backend>(
                         }
                         _ => {}
                     },
+                    // Control in input tab
                     Tabs::Input => match key.code {
                         KeyCode::Esc => {
                             return Ok(());
@@ -100,7 +115,7 @@ pub async fn run_ui<B: Backend>(
                         KeyCode::Enter => match app.rooms.get_current_room() {
                             Some(room) => {
                                 let message: String = app.input.drain(..).collect();
-                                client.send_message(&room.id, message).await;
+                                app.client.send_message(&room.id, message).await;
                             }
                             None => {}
                         },
@@ -118,6 +133,11 @@ pub async fn run_ui<B: Backend>(
     }
 }
 
+/// The main UI.
+/// Defines Layout and draws widgets.
+/// # Arguments
+/// * `f` - The frame to draw on.
+/// * `app` - The application state.
 fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -144,6 +164,11 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     };
 }
 
+/// Draws the welcome widget
+/// # Arguments
+/// * `f` - The frame to draw on.
+/// * `current_tab` - The current tab.
+/// * `area` - The area to draw on.
 fn draw_welcome_tab<B>(f: &mut Frame<B>, current_tab: &Tabs, area: Rect)
 where
     B: Backend,
@@ -167,6 +192,11 @@ where
     f.render_widget(paragraph, area);
 }
 
+/// Draws the message widget
+/// # Arguments
+/// * `f` - The frame to draw on.
+/// * `current_tab` - The current tab.
+/// * `area` - The area to draw on.
 fn draw_message_tab<B>(f: &mut Frame<B>, current_tab: &Tabs, room: &mut Room, area: Rect)
 where
     B: Backend,
@@ -181,10 +211,7 @@ where
                 format!("{}:{}", m.0, m.1),
                 Style::default().fg(Color::Green),
             );
-            text.extend(Text::raw(format!(
-                "{}",
-                textwrap::fill(&m.2, area.width as usize - 6)
-            )));
+            text.extend(Text::raw(textwrap::fill(&m.2, area.width as usize - 6)));
 
             ListItem::new(text)
         })
@@ -205,6 +232,12 @@ where
     f.render_stateful_widget(messages, area, &mut room.messages.state);
 }
 
+/// Draws the room widget
+/// If a room is selected, it will draw the members widget.
+/// # Arguments
+/// * `f` - The frame to draw on.
+/// * `current_tab` - The current tab.
+/// * `area` - The area to draw on.
 fn draw_room_tab<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
 where
     B: Backend,
@@ -215,7 +248,7 @@ where
         .iter()
         .enumerate()
         .map(|(_i, m)| {
-            let content = vec![Spans::from(Span::raw(format!("{}", m.name)))];
+            let content = vec![Spans::from(Span::raw(m.name.to_string()))];
             ListItem::new(content)
         })
         .collect();
@@ -248,6 +281,11 @@ where
     };
 }
 
+/// Draws the member widget
+/// # Arguments
+/// * `f` - The frame to draw on.
+/// * `current_tab` - The current tab.
+/// * `area` - The area to draw on.
 fn draw_member_tab<B>(f: &mut Frame<B>, current_tab: &Tabs, room: &mut Room, area: Rect)
 where
     B: Backend,
@@ -258,7 +296,7 @@ where
         .iter()
         .enumerate()
         .map(|(_i, m)| {
-            let content = vec![Spans::from(Span::raw(format!("{}", m)))];
+            let content = vec![Spans::from(Span::raw(m.to_string()))];
             ListItem::new(content)
         })
         .collect();
@@ -277,6 +315,11 @@ where
     f.render_stateful_widget(members, area, &mut room.members.state);
 }
 
+/// Draws the input widget
+/// # Arguments
+/// * `f` - The frame to draw on.
+/// * `app` - The application.
+/// * `area` - The area to draw on.
 fn draw_input_tab<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
 where
     B: Backend,
@@ -293,16 +336,13 @@ where
         .style(Style::default())
         .block(block);
     f.render_widget(input, area);
-    match app.current_tab {
-        Tabs::Input => {
-            // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
-            f.set_cursor(
-                // Put cursor past the end of the input text
-                area.x + app.input.width() as u16 + 1,
-                // Move one line down, from the border to the input line
-                area.y + 1,
-            )
-        }
-        _ => {} // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
+    if app.current_tab == Tabs::Input {
+        // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
+        f.set_cursor(
+            // Put cursor past the end of the input text
+            area.x + app.input.width() as u16 + 1,
+            // Move one line down, from the border to the input line
+            area.y + 1,
+        );
     }
 }

@@ -22,18 +22,24 @@ pub trait ClientExt {
         home_server: Url,
         username: String,
         password: String,
-        tx: Sender<(OriginalSyncRoomMessageEvent, Room)>,
+        tx: Sender<(OriginalSyncRoomMessageEvent, Room, Client)>,
     ) -> Result<Client, Error>;
-    async fn send_message(&self, room_id: &String, message: String);
+    async fn send_message(&self, room_id: &str, message: String);
 }
 
 #[async_trait]
 impl ClientExt for Client {
+    /// Initialize the matrix client
+    /// # Arguments
+    /// * `home_server` - The homeserver url
+    /// * `username` - The username
+    /// * `password` - The password
+    /// * `tx` - The channel to send message events to
     async fn initialize(
         home_server: Url,
         username: String,
         password: String,
-        tx: Sender<(OriginalSyncRoomMessageEvent, Room)>,
+        tx: Sender<(OriginalSyncRoomMessageEvent, Room, Client)>,
     ) -> Result<Client, Error> {
         let client = match Client::new(home_server).await {
             Ok(client) => client,
@@ -41,6 +47,7 @@ impl ClientExt for Client {
                 return Err(Error::Http(err));
             }
         };
+
         match client
             .login(&username, &password, None, Some("Matrix-Tui-Client"))
             .await
@@ -54,22 +61,20 @@ impl ClientExt for Client {
             Err(err) => return Err(err),
         };
 
-        //Event Handler
+        // Register Event Handler
         client
             .register_event_handler({
                 let tx = tx.clone();
-                move |ev: OriginalSyncRoomMessageEvent, room: Room| {
+                move |ev: OriginalSyncRoomMessageEvent, room: Room, client: Client| {
                     let tx = tx.clone();
                     async move {
-                        match tx.send((ev, room)).await {
-                            Ok(_) => (),
-                            Err(_) => (),
-                        };
+                        if (tx.send((ev, room, client)).await).is_ok() {};
                     }
                 }
             })
             .await;
 
+        // Clone client to endlessly sync with server to get events
         let sync_client = client.clone();
         tokio::spawn(async move {
             sync_client.sync(SyncSettings::default()).await;
@@ -78,7 +83,11 @@ impl ClientExt for Client {
         return Ok(client);
     }
 
-    async fn send_message(&self, room_id: &String, message: String) {
+    /// Send a message to a room
+    /// # Arguments
+    /// * `room_id` - The room id
+    /// * `message` - The message to send
+    async fn send_message(&self, room_id: &str, message: String) {
         if message.is_empty() {
             return;
         }
@@ -92,13 +101,15 @@ impl ClientExt for Client {
             None => return,
         };
         let content = RoomMessageEventContent::text_plain(message);
-        match room.send(content, None).await {
-            Ok(_) => (),
-            Err(_) => (),
-        };
+        if (room.send(content, None).await).is_ok() {};
     }
 }
 
+/// Convert MessageType to a readable string
+///
+/// # Arguments
+/// * `message_type` - The message type
+/// * `homeserver_url` - The homeserver url
 pub fn convert_message_type(msgtype: MessageType, homeserver_url: Url) -> String {
     match msgtype {
         MessageType::Text(content) => content.body,
