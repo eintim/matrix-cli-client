@@ -115,7 +115,7 @@ pub async fn run_ui<B: Backend>(
                         KeyCode::Enter => match app.rooms.get_current_room() {
                             Some(room) => {
                                 let message: String = app.input.drain(..).collect();
-                                app.client.send_message(&room.id, message).await;
+                                app.client.send_message(&room.id, &message).await;
                             }
                             None => {}
                         },

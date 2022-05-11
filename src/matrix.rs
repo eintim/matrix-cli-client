@@ -24,7 +24,7 @@ pub trait ClientExt {
         password: String,
         tx: Sender<(OriginalSyncRoomMessageEvent, Room, Client)>,
     ) -> Result<Client, Error>;
-    async fn send_message(&self, room_id: &str, message: String);
+    async fn send_message(&self, room_id: &str, message: &str);
 }
 
 #[async_trait]
@@ -87,7 +87,7 @@ impl ClientExt for Client {
     /// # Arguments
     /// * `room_id` - The room id
     /// * `message` - The message to send
-    async fn send_message(&self, room_id: &str, message: String) {
+    async fn send_message(&self, room_id: &str, message: &str) {
         if message.is_empty() {
             return;
         }
