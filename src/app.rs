@@ -398,11 +398,12 @@ impl App {
                     None => "".to_string(),
                 };
                 if sender != current_user {
-                    if let Ok(_) = notify_rust::Notification::new()
+                    if notify_rust::Notification::new()
                         .summary(&sender)
                         .body(&message)
                         .icon("matrix")
                         .show()
+                        .is_ok()
                     {};
                 }
             }

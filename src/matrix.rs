@@ -68,9 +68,7 @@ impl ClientExt for Client {
                 move |ev: OriginalSyncRoomMessageEvent, room: Room, client: Client| {
                     let tx = tx.clone();
                     async move {
-                        if let Ok(_) = tx.send((ev, room, client)).await {
-                            ()
-                        };
+                        if (tx.send((ev, room, client)).await).is_ok() {};
                     }
                 }
             })
@@ -103,9 +101,7 @@ impl ClientExt for Client {
             None => return,
         };
         let content = RoomMessageEventContent::text_plain(message);
-        if let Ok(_) = room.send(content, None).await {
-            ()
-        };
+        if (room.send(content, None).await).is_ok() {};
     }
 }
 
