@@ -397,15 +397,14 @@ impl App {
                     Some(user_id) => user_id.to_string(),
                     None => "".to_string(),
                 };
-                if sender != current_user {
-                    if notify_rust::Notification::new()
+                if sender != current_user
+                    && notify_rust::Notification::new()
                         .summary(&sender)
                         .body(&message)
                         .icon("matrix")
                         .show()
                         .is_ok()
-                    {};
-                }
+                {}
             }
             None => {}
         }
