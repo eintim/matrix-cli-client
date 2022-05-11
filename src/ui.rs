@@ -22,6 +22,12 @@ use unicode_width::UnicodeWidthStr;
 
 /// The main UI loop.
 /// This function loops until the user quits the application.
+/// # Arguments
+///  * `termial` - The terminal to use
+/// * `app` - The application to use
+/// * `rx` - The channel to receive events from
+/// # Returns
+/// * `Result<(), io::Error>` - The result of the operation
 pub async fn run_ui<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: App,
@@ -38,6 +44,7 @@ pub async fn run_ui<B: Backend>(
         if poll(Duration::from_millis(10))? {
             if let Event::Key(key) = event::read()? {
                 match app.current_tab {
+                    // Control in room tab
                     Tabs::Room => match key.code {
                         KeyCode::Esc => {
                             return Ok(());
@@ -53,6 +60,7 @@ pub async fn run_ui<B: Backend>(
                         }
                         _ => {}
                     },
+                    // Control in message tab
                     Tabs::Messages => match key.code {
                         KeyCode::Esc => {
                             return Ok(());
@@ -74,6 +82,7 @@ pub async fn run_ui<B: Backend>(
                         }
                         _ => {}
                     },
+                    // Control in members tab
                     Tabs::Members => match key.code {
                         KeyCode::Esc => {
                             return Ok(());
@@ -95,6 +104,7 @@ pub async fn run_ui<B: Backend>(
                         }
                         _ => {}
                     },
+                    // Control in input tab
                     Tabs::Input => match key.code {
                         KeyCode::Esc => {
                             return Ok(());
@@ -305,6 +315,11 @@ where
     f.render_stateful_widget(members, area, &mut room.members.state);
 }
 
+/// Draws the input widget
+/// # Arguments
+/// * `f` - The frame to draw on.
+/// * `app` - The application.
+/// * `area` - The area to draw on.
 fn draw_input_tab<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
 where
     B: Backend,
