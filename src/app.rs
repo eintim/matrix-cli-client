@@ -44,7 +44,7 @@ impl ScrollableMessageList {
     pub fn with_messages(messages: Vec<(String, String, String)>) -> ScrollableMessageList {
         let mut list = ScrollableMessageList {
             state: ListState::default(),
-            messages: messages,
+            messages,
             mode: MessageViewMode::Follow,
         };
         list.state
@@ -119,7 +119,7 @@ impl ScrollableMemberList {
     pub fn with_members(members: Vec<String>) -> ScrollableMemberList {
         ScrollableMemberList {
             state: ListState::default(),
-            members: members,
+            members,
         }
     }
 
@@ -222,24 +222,22 @@ impl Room {
                         messages.push((
                             date_time.format("%d/%m/%Y %T").to_string(),
                             sender,
-                            (format!(
-                                "{}",
-                                convert_message_type(event.content.msgtype, homeserver_url.clone())
-                            ))
+                            (convert_message_type(event.content.msgtype, homeserver_url.clone())
+                                .to_string())
                             .to_string(),
                         ));
                     }
                 }
                 messages.reverse();
                 Room {
-                    name: name,
+                    name,
                     id: room.room_id().to_string(),
                     messages: ScrollableMessageList::with_messages(messages),
                     members: ScrollableMemberList::with_members(member_names),
                 }
             }
             Err(_) => Room {
-                name: name,
+                name,
                 id: room.room_id().to_string(),
                 messages: ScrollableMessageList::new(),
                 members: ScrollableMemberList::with_members(member_names),
@@ -315,7 +313,7 @@ impl ScrollableRoomList {
             Some(i) => i,
             None => return None,
         };
-        return self.rooms.get_mut(i);
+        self.rooms.get_mut(i)
     }
 }
 
@@ -348,10 +346,10 @@ impl App {
             rooms: ScrollableRoomList::new(),
             current_tab: Tabs::Room,
             input: String::new(),
-            client: client,
+            client,
         };
         app.load_rooms().await;
-        return app;
+        app
     }
 
     /// Load the rooms from the homeserver and add them to the room list.
@@ -400,15 +398,12 @@ impl App {
                     None => "".to_string(),
                 };
                 if sender != current_user {
-                    match notify_rust::Notification::new()
+                    if let Ok(_) = notify_rust::Notification::new()
                         .summary(&sender)
                         .body(&message)
                         .icon("matrix")
                         .show()
-                    {
-                        Ok(_) => {}
-                        Err(_) => {}
-                    };
+                    {};
                 }
             }
             None => {}

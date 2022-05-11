@@ -29,7 +29,7 @@ pub async fn run_ui<B: Backend>(
 ) -> io::Result<()> {
     loop {
         // Check rx
-        if let Some((ev, room, client)) = rx.try_recv().ok() {
+        if let Ok((ev, room, client)) = rx.try_recv() {
             app.handle_matrix_event(ev, room, client).await;
         }
 
@@ -201,10 +201,7 @@ where
                 format!("{}:{}", m.0, m.1),
                 Style::default().fg(Color::Green),
             );
-            text.extend(Text::raw(format!(
-                "{}",
-                textwrap::fill(&m.2, area.width as usize - 6)
-            )));
+            text.extend(Text::raw(textwrap::fill(&m.2, area.width as usize - 6)));
 
             ListItem::new(text)
         })
@@ -241,7 +238,7 @@ where
         .iter()
         .enumerate()
         .map(|(_i, m)| {
-            let content = vec![Spans::from(Span::raw(format!("{}", m.name)))];
+            let content = vec![Spans::from(Span::raw(m.name.to_string()))];
             ListItem::new(content)
         })
         .collect();
@@ -289,7 +286,7 @@ where
         .iter()
         .enumerate()
         .map(|(_i, m)| {
-            let content = vec![Spans::from(Span::raw(format!("{}", m)))];
+            let content = vec![Spans::from(Span::raw(m.to_string()))];
             ListItem::new(content)
         })
         .collect();
@@ -324,16 +321,13 @@ where
         .style(Style::default())
         .block(block);
     f.render_widget(input, area);
-    match app.current_tab {
-        Tabs::Input => {
-            // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
-            f.set_cursor(
-                // Put cursor past the end of the input text
-                area.x + app.input.width() as u16 + 1,
-                // Move one line down, from the border to the input line
-                area.y + 1,
-            )
-        }
-        _ => {} // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
+    if app.current_tab == Tabs::Input {
+        // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
+        f.set_cursor(
+            // Put cursor past the end of the input text
+            area.x + app.input.width() as u16 + 1,
+            // Move one line down, from the border to the input line
+            area.y + 1,
+        );
     }
 }
