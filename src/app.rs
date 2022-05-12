@@ -4,10 +4,13 @@ use futures::{pin_mut, StreamExt};
 use matrix_sdk::{
     room::Room as MatrixRoom,
     ruma::events::{
-        room::message::OriginalSyncRoomMessageEvent, AnySyncMessageLikeEvent, AnySyncRoomEvent,
-        SyncMessageLikeEvent,
+        room::{
+            member::{MembershipState, OriginalSyncRoomMemberEvent},
+            message::OriginalSyncRoomMessageEvent,
+        },
+        AnySyncMessageLikeEvent, AnySyncRoomEvent, SyncMessageLikeEvent,
     },
-    Client,
+    Client, RoomType,
 };
 
 use tui::widgets::ListState;
@@ -108,7 +111,7 @@ impl ScrollableMessageList {
 
 pub struct ScrollableMemberList {
     pub state: ListState,
-    pub members: Vec<String>,
+    pub members: Vec<(String, String)>,
 }
 
 impl ScrollableMemberList {
@@ -116,7 +119,7 @@ impl ScrollableMemberList {
     ///
     /// # Arguments
     /// * `members` - A vector of member names
-    pub fn with_members(members: Vec<String>) -> ScrollableMemberList {
+    pub fn with_members(members: Vec<(String, String)>) -> ScrollableMemberList {
         ScrollableMemberList {
             state: ListState::default(),
             members,
@@ -188,10 +191,10 @@ impl Room {
         let member_names = members
             .into_iter()
             .map(|member| match member.display_name() {
-                Some(name) => name.to_string(),
-                None => member.user_id().to_string(),
+                Some(name) => (name.to_string(), member.user_id().to_string()),
+                None => (member.user_id().to_string(), member.user_id().to_string()),
             })
-            .collect::<Vec<String>>();
+            .collect::<Vec<(String, String)>>();
 
         //Get old message
         match room.timeline_backward().await {
@@ -355,10 +358,13 @@ impl App {
     /// Load the rooms from the homeserver and add them to the room list.
     async fn load_rooms(&mut self) {
         let rooms = self.client.rooms();
+
         for room in rooms {
-            self.rooms
-                .add_room(room, self.client.homeserver().await)
-                .await;
+            if room.room_type() == RoomType::Joined {
+                self.rooms
+                    .add_room(room, self.client.homeserver().await)
+                    .await;
+            }
         }
     }
 
@@ -369,7 +375,7 @@ impl App {
     /// * `event` - The event to handle.
     /// * `room` - The room to handle the event in.
     /// * `client` - The client used to receive messages.
-    pub async fn handle_matrix_event(
+    pub async fn handle_matrix_message_event(
         &mut self,
         event: OriginalSyncRoomMessageEvent,
         room: MatrixRoom,
@@ -408,6 +414,67 @@ impl App {
             }
             None => {}
         }
+    }
+
+    pub async fn handle_matrix_room_event(
+        &mut self,
+        event: OriginalSyncRoomMemberEvent,
+        room: MatrixRoom,
+        client: Client,
+    ) {
+        let user_id = match client.user_id().await {
+            Some(user_id) => user_id,
+            None => return,
+        };
+        if event.content.membership == MembershipState::Join {
+            //Check if room is already in the list
+            let room_id = room.room_id().to_string();
+            match self.rooms.rooms.iter_mut().find(|r| r.id == room_id) {
+                Some(r) => {
+                    let display_name = match event.content.displayname {
+                        Some(display_name) => display_name,
+                        None => "Unknown name".to_string(),
+                    };
+                    r.members
+                        .members
+                        .push((display_name, event.state_key.to_string()));
+                }
+                None => {
+                    // Create room if client joined
+                    if event.state_key == user_id {
+                        self.rooms
+                            .add_room(room.clone(), client.homeserver().await)
+                            .await;
+                    }
+                }
+            };
+        };
+        if event.content.membership == MembershipState::Leave {
+            let room_id = room.room_id().to_string();
+            match self.rooms.rooms.iter().position(|r| r.id == room_id) {
+                Some(i) => {
+                    if event.state_key == user_id {
+                        self.rooms.rooms.remove(i);
+                    } else {
+                        let room = match self.rooms.rooms.get_mut(i) {
+                            Some(room) => room,
+                            None => return,
+                        };
+                        match room
+                            .members
+                            .members
+                            .iter_mut()
+                            // State_key contains user_id of event
+                            .position(|m| m.1 == event.state_key)
+                        {
+                            Some(i) => room.members.members.remove(i),
+                            None => return,
+                        };
+                    }
+                }
+                None => {}
+            };
+        };
     }
 
     /// Switches to the next tab.

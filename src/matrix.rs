@@ -3,16 +3,20 @@ use matrix_sdk::{
     room::Room,
     ruma::{
         events::room::{
+            member::{OriginalSyncRoomMemberEvent, StrippedRoomMemberEvent},
             message::{MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent},
             MediaSource,
         },
-        OwnedMxcUri, RoomId,
+        OwnedMxcUri, RoomId, UserId,
     },
     Client, Error,
 };
 use url::Url;
 
-use tokio::sync::mpsc::Sender;
+use tokio::{
+    sync::mpsc::Sender,
+    time::{sleep, Duration},
+};
 
 use async_trait::async_trait;
 
@@ -22,9 +26,11 @@ pub trait ClientExt {
         home_server: Url,
         username: String,
         password: String,
-        tx: Sender<(OriginalSyncRoomMessageEvent, Room, Client)>,
+        tx_messages: Sender<(OriginalSyncRoomMessageEvent, Room, Client)>,
+        tx_rooms: Sender<(OriginalSyncRoomMemberEvent, Room, Client)>,
     ) -> Result<Client, Error>;
     async fn send_message(&self, room_id: &str, message: &str);
+    async fn kick_user(&self, room_id: &str, user_id: &str);
 }
 
 #[async_trait]
@@ -39,7 +45,8 @@ impl ClientExt for Client {
         home_server: Url,
         username: String,
         password: String,
-        tx: Sender<(OriginalSyncRoomMessageEvent, Room, Client)>,
+        tx_messages: Sender<(OriginalSyncRoomMessageEvent, Room, Client)>,
+        tx_rooms: Sender<(OriginalSyncRoomMemberEvent, Room, Client)>,
     ) -> Result<Client, Error> {
         let client = match Client::new(home_server).await {
             Ok(client) => client,
@@ -62,13 +69,74 @@ impl ClientExt for Client {
         };
 
         // Register Event Handler
+        // Send OriginalSyncRoomMessageEvent to message channel
         client
             .register_event_handler({
-                let tx = tx.clone();
+                let tx = tx_messages.clone();
                 move |ev: OriginalSyncRoomMessageEvent, room: Room, client: Client| {
                     let tx = tx.clone();
                     async move {
                         if (tx.send((ev, room, client)).await).is_ok() {};
+                    }
+                }
+            })
+            .await;
+
+        // Handle OriginalSyncRoomMemberEvent events
+        // Send OriginalSyncRoomMemberEvent to room channel
+        client
+            .register_event_handler({
+                let tx = tx_rooms.clone();
+                move |ev: OriginalSyncRoomMemberEvent, room: Room, client: Client| {
+                    let tx = tx.clone();
+                    async move {
+                        if (tx.send((ev.clone(), room.clone(), client.clone())).await).is_ok() {};
+                        let user_id = match client.user_id().await {
+                            Some(user_id) => user_id,
+                            None => return,
+                        };
+                        if ev.state_key != user_id {
+                            return;
+                        }
+                        if let Room::Invited(room) = room {
+                            let mut delay = 2;
+                            while (room.accept_invitation().await).is_err() {
+                                // retry autojoin due to synapse sending invites, before the
+                                // invited user can join for more information see
+                                // https://github.com/matrix-org/synapse/issues/4345
+                                sleep(Duration::from_secs(delay)).await;
+                                delay *= 2;
+                                if delay > 3600 {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+            .await;
+
+        // Automatically accept room invites
+        client
+            .register_event_handler({
+                move |ev: StrippedRoomMemberEvent, room: Room, client: Client| {
+                    async move {
+                        if ev.state_key != client.user_id().await.unwrap() {
+                            return;
+                        }
+                        if let Room::Invited(room) = room {
+                            let mut delay = 2;
+                            while (room.accept_invitation().await).is_err() {
+                                // retry autojoin due to synapse sending invites, before the
+                                // invited user can join for more information see
+                                // https://github.com/matrix-org/synapse/issues/4345
+                                sleep(Duration::from_secs(delay)).await;
+                                delay *= 2;
+                                if delay > 3600 {
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
             })
@@ -102,6 +170,27 @@ impl ClientExt for Client {
         };
         let content = RoomMessageEventContent::text_plain(message);
         if (room.send(content, None).await).is_ok() {};
+    }
+
+    /// Kick a user from a room
+    /// # Arguments
+    /// * `room_id` - The room id
+    /// * `user_id` - The message to send
+    async fn kick_user(&self, room_id: &str, user_id: &str) {
+        let room_id = match RoomId::parse(room_id) {
+            Ok(room_id) => room_id,
+            Err(_) => return,
+        };
+        let room = match self.get_joined_room(&room_id) {
+            Some(room) => room,
+            None => return,
+        };
+
+        let user_id = match <&UserId>::try_from(user_id) {
+            Ok(user_id) => user_id,
+            Err(_) => return,
+        };
+        if (room.kick_user(user_id, None).await).is_ok() {};
     }
 }
 

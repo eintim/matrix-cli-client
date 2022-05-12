@@ -15,7 +15,11 @@ use tui::{
 };
 
 use matrix_sdk::{
-    room::Room as MatrixRoom, ruma::events::room::message::OriginalSyncRoomMessageEvent, Client,
+    room::Room as MatrixRoom,
+    ruma::events::room::{
+        member::OriginalSyncRoomMemberEvent, message::OriginalSyncRoomMessageEvent,
+    },
+    Client,
 };
 
 use unicode_width::UnicodeWidthStr;
@@ -31,12 +35,16 @@ use unicode_width::UnicodeWidthStr;
 pub async fn run_ui<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: App,
-    mut rx: Receiver<(OriginalSyncRoomMessageEvent, MatrixRoom, Client)>,
+    mut rx_messages: Receiver<(OriginalSyncRoomMessageEvent, MatrixRoom, Client)>,
+    mut rx_rooms: Receiver<(OriginalSyncRoomMemberEvent, MatrixRoom, Client)>,
 ) -> io::Result<()> {
     loop {
         // Check rx
-        if let Ok((ev, room, client)) = rx.try_recv() {
-            app.handle_matrix_event(ev, room, client).await;
+        if let Ok((ev, room, client)) = rx_messages.try_recv() {
+            app.handle_matrix_message_event(ev, room, client).await;
+        }
+        if let Ok((ev, room, client)) = rx_rooms.try_recv() {
+            app.handle_matrix_room_event(ev, room, client).await;
         }
 
         terminal.draw(|f| ui(f, &mut app))?;
@@ -96,6 +104,19 @@ pub async fn run_ui<B: Backend>(
                         KeyCode::Down => match app.rooms.get_current_room() {
                             Some(room) => {
                                 room.members.next_member();
+                            }
+                            None => {}
+                        },
+                        KeyCode::Char('k') => match app.rooms.get_current_room() {
+                            Some(room) => {
+                                match room.members.state.selected() {
+                                    Some(i) => {
+                                        app.client
+                                            .kick_user(&room.id, &room.members.members[i].1)
+                                            .await;
+                                    }
+                                    None => {}
+                                };
                             }
                             None => {}
                         },
@@ -296,7 +317,7 @@ where
         .iter()
         .enumerate()
         .map(|(_i, m)| {
-            let content = vec![Spans::from(Span::raw(m.to_string()))];
+            let content = vec![Spans::from(Span::raw(m.0.to_string()))];
             ListItem::new(content)
         })
         .collect();
