@@ -1,6 +1,7 @@
 use crate::matrix::convert_message_type;
 use futures::{pin_mut, StreamExt};
 
+use crate::matrix::*;
 use matrix_sdk::{
     room::Room as MatrixRoom,
     ruma::events::{
@@ -366,6 +367,12 @@ impl App {
                     .await;
             }
         }
+
+        // Accepts all invites
+        let invites = self.client.invited_rooms();
+        for room in invites {
+            room.accept_invitation_background();
+        }
     }
 
     /// Handles OriginalSyncRoomMessage events.
@@ -416,6 +423,12 @@ impl App {
         }
     }
 
+    /// Handles OriginalSyncRoomMemberEvent events.
+    /// Takes data from the event and adds it to room.
+    /// # Arguments
+    /// * `event` - The event to handle.
+    /// * `room` - The room to handle the event in.
+    /// * `client` - The client used to receive messages.
     pub async fn handle_matrix_room_event(
         &mut self,
         event: OriginalSyncRoomMemberEvent,
@@ -435,9 +448,20 @@ impl App {
                         Some(display_name) => display_name,
                         None => "Unknown name".to_string(),
                     };
-                    r.members
+                    //Check if member is already in the list
+                    match r
                         .members
-                        .push((display_name, event.state_key.to_string()));
+                        .members
+                        .iter_mut()
+                        .find(|m| m.1 == event.state_key)
+                    {
+                        Some(_) => {}
+                        None => {
+                            r.members
+                                .members
+                                .push((display_name, event.state_key.to_string()));
+                        }
+                    };
                 }
                 None => {
                     // Create room if client joined
@@ -454,7 +478,15 @@ impl App {
             match self.rooms.rooms.iter().position(|r| r.id == room_id) {
                 Some(i) => {
                     if event.state_key == user_id {
+                        // Deselect room to avoid crash
+                        if self.rooms.state.selected() == Some(i) {
+                            self.rooms.state.select(None);
+                        }
                         self.rooms.rooms.remove(i);
+                        // Reset Tab if last room is closed
+                        if self.current_tab == Tabs::Members || self.current_tab == Tabs::Input {
+                            self.current_tab = Tabs::Room;
+                        }
                     } else {
                         let room = match self.rooms.rooms.get_mut(i) {
                             Some(room) => room,
@@ -467,8 +499,14 @@ impl App {
                             // State_key contains user_id of event
                             .position(|m| m.1 == event.state_key)
                         {
-                            Some(i) => room.members.members.remove(i),
-                            None => return,
+                            Some(i) => {
+                                // Deselect member to avoid crash
+                                if room.members.state.selected() == Some(i) {
+                                    room.members.state.select(None);
+                                };
+                                room.members.members.remove(i);
+                            }
+                            None => (),
                         };
                     }
                 }

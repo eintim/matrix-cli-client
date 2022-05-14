@@ -7,7 +7,7 @@ use tokio::sync::mpsc::Receiver;
 
 use tui::{
     backend::Backend,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Span, Spans, Text},
     widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, Wrap},
@@ -195,12 +195,18 @@ where
     B: Backend,
 {
     let text = vec![
-        Spans::from("This is a Matrix Tui Client"),
-        Spans::from(""),
+        Spans::from("   ___                   ___  "),
+        Spans::from(" (o o)                 (o o) "),
+        Spans::from("(  V  ) Matrix Client (  V  )"),
+        Spans::from("--m-m-------------------m-m--"),
         Spans::from("To switch between tabs use tab key"),
         Spans::from("To scroll up and down use up and down arrow keys"),
         Spans::from("To send a message use enter key"),
+        Spans::from("To kick someone in the member list use 'k' key"),
+        Spans::from("To leave a room kick yourself"),
         Spans::from("To quit the client use ESC"),
+        Spans::from(""),
+        Spans::from("Note: Room invitations will be accepted automatically"),
     ];
     let block = match current_tab {
         Tabs::Messages => Block::default()
@@ -209,7 +215,10 @@ where
             .border_type(BorderType::Thick),
         _ => Block::default().borders(Borders::ALL).title("Welcome"),
     };
-    let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
+    let paragraph = Paragraph::new(text)
+        .block(block)
+        .alignment(Alignment::Center)
+        .wrap(Wrap { trim: true });
     f.render_widget(paragraph, area);
 }
 

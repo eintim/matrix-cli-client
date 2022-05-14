@@ -1,6 +1,6 @@
 use matrix_sdk::{
     config::SyncSettings,
-    room::Room,
+    room::{Invited, Room},
     ruma::{
         events::room::{
             member::{OriginalSyncRoomMemberEvent, StrippedRoomMemberEvent},
@@ -90,27 +90,7 @@ impl ClientExt for Client {
                 move |ev: OriginalSyncRoomMemberEvent, room: Room, client: Client| {
                     let tx = tx.clone();
                     async move {
-                        if (tx.send((ev.clone(), room.clone(), client.clone())).await).is_ok() {};
-                        let user_id = match client.user_id().await {
-                            Some(user_id) => user_id,
-                            None => return,
-                        };
-                        if ev.state_key != user_id {
-                            return;
-                        }
-                        if let Room::Invited(room) = room {
-                            let mut delay = 2;
-                            while (room.accept_invitation().await).is_err() {
-                                // retry autojoin due to synapse sending invites, before the
-                                // invited user can join for more information see
-                                // https://github.com/matrix-org/synapse/issues/4345
-                                sleep(Duration::from_secs(delay)).await;
-                                delay *= 2;
-                                if delay > 3600 {
-                                    break;
-                                }
-                            }
-                        }
+                        if (tx.send((ev, room, client)).await).is_ok() {};
                     }
                 }
             })
@@ -119,24 +99,16 @@ impl ClientExt for Client {
         // Automatically accept room invites
         client
             .register_event_handler({
-                move |ev: StrippedRoomMemberEvent, room: Room, client: Client| {
-                    async move {
-                        if ev.state_key != client.user_id().await.unwrap() {
-                            return;
-                        }
-                        if let Room::Invited(room) = room {
-                            let mut delay = 2;
-                            while (room.accept_invitation().await).is_err() {
-                                // retry autojoin due to synapse sending invites, before the
-                                // invited user can join for more information see
-                                // https://github.com/matrix-org/synapse/issues/4345
-                                sleep(Duration::from_secs(delay)).await;
-                                delay *= 2;
-                                if delay > 3600 {
-                                    break;
-                                }
-                            }
-                        }
+                move |ev: StrippedRoomMemberEvent, room: Room, client: Client| async move {
+                    let user_id = match client.user_id().await {
+                        Some(user_id) => user_id,
+                        None => return,
+                    };
+                    if ev.state_key != user_id {
+                        return;
+                    }
+                    if let Room::Invited(room) = room {
+                        room.accept_invitation_background();
                     }
                 }
             })
@@ -194,6 +166,32 @@ impl ClientExt for Client {
     }
 }
 
+#[async_trait]
+pub trait InvitedExt {
+    fn accept_invitation_background(&self);
+}
+
+#[async_trait]
+impl InvitedExt for Invited {
+    /// Accepts the invitation in the background
+    fn accept_invitation_background(&self) {
+        let room = self.clone();
+        tokio::spawn(async move {
+            let mut delay = 2;
+            while (room.accept_invitation().await).is_err() {
+                // retry autojoin due to synapse sending invites, before the
+                // invited user can join for more information see
+                // https://github.com/matrix-org/synapse/issues/4345
+                sleep(Duration::from_secs(delay)).await;
+                delay *= 2;
+                if delay > 3600 {
+                    break;
+                }
+            }
+        });
+    }
+}
+
 /// Convert MessageType to a readable string
 ///
 /// # Arguments
@@ -231,13 +229,25 @@ pub fn convert_message_type(msgtype: MessageType, homeserver_url: Url) -> String
     }
 }
 
+/// Convert MediaSource to a readable url string
+/// # Arguments
+/// * `source` - The media source
+/// * `homeserver_url` - The homeserver url
+/// # Returns
+/// * `String` - The readable url
 fn handle_media_source(source: MediaSource, homeserver_url: Url) -> String {
     match source {
         MediaSource::Plain(mxc) => convert_mxc_to_url(mxc, homeserver_url).to_string(),
-        MediaSource::Encrypted(_) => "".to_string(),
+        MediaSource::Encrypted(_) => "File is encrypted. Not Implemented!".to_string(),
     }
 }
 
+/// Generate a url from an mxc uri
+/// # Arguments
+/// * `mxc` - The mxc uri
+/// * `base_url` - The homeserver url
+/// # Returns
+/// * `Url` - The url
 fn convert_mxc_to_url(mxc: OwnedMxcUri, mut base_url: Url) -> Url {
     match mxc.parts() {
         Ok((server_name, media_id)) => {
