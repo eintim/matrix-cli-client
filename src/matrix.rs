@@ -120,7 +120,11 @@ impl ClientExt for Client {
         client
             .register_event_handler({
                 move |ev: StrippedRoomMemberEvent, room: Room, client: Client| async move {
-                    if ev.state_key != client.user_id().await.unwrap() {
+                    let user_id = match client.user_id().await {
+                        Some(user_id) => user_id,
+                        None => return,
+                    };
+                    if ev.state_key != user_id {
                         return;
                     }
                     if let Room::Invited(room) = room {
@@ -190,17 +194,20 @@ pub trait InvitedExt {
 #[async_trait]
 impl InvitedExt for Invited {
     async fn accept_invitation_background(&self) {
-        let mut delay = 2;
-        while (self.accept_invitation().await).is_err() {
-            // retry autojoin due to synapse sending invites, before the
-            // invited user can join for more information see
-            // https://github.com/matrix-org/synapse/issues/4345
-            sleep(Duration::from_secs(delay)).await;
-            delay *= 2;
-            if delay > 3600 {
-                break;
+        let room = self.clone();
+        tokio::spawn(async move {
+            let mut delay = 2;
+            while (room.accept_invitation().await).is_err() {
+                // retry autojoin due to synapse sending invites, before the
+                // invited user can join for more information see
+                // https://github.com/matrix-org/synapse/issues/4345
+                sleep(Duration::from_secs(delay)).await;
+                delay *= 2;
+                if delay > 3600 {
+                    break;
+                }
             }
-        }
+        });
     }
 }
 
