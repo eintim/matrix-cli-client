@@ -16,8 +16,6 @@ use matrix_sdk::{
 
 use tui::widgets::ListState;
 
-use tokio::time::{sleep, Duration};
-
 use chrono::offset::Utc;
 use chrono::DateTime;
 
