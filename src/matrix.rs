@@ -1,6 +1,6 @@
 use matrix_sdk::{
     config::SyncSettings,
-    room::Room,
+    room::{Invited, Room},
     ruma::{
         events::room::{
             member::{OriginalSyncRoomMemberEvent, StrippedRoomMemberEvent},
@@ -119,24 +119,12 @@ impl ClientExt for Client {
         // Automatically accept room invites
         client
             .register_event_handler({
-                move |ev: StrippedRoomMemberEvent, room: Room, client: Client| {
-                    async move {
-                        if ev.state_key != client.user_id().await.unwrap() {
-                            return;
-                        }
-                        if let Room::Invited(room) = room {
-                            let mut delay = 2;
-                            while (room.accept_invitation().await).is_err() {
-                                // retry autojoin due to synapse sending invites, before the
-                                // invited user can join for more information see
-                                // https://github.com/matrix-org/synapse/issues/4345
-                                sleep(Duration::from_secs(delay)).await;
-                                delay *= 2;
-                                if delay > 3600 {
-                                    break;
-                                }
-                            }
-                        }
+                move |ev: StrippedRoomMemberEvent, room: Room, client: Client| async move {
+                    if ev.state_key != client.user_id().await.unwrap() {
+                        return;
+                    }
+                    if let Room::Invited(room) = room {
+                        room.accept_invitation_background().await;
                     }
                 }
             })
@@ -191,6 +179,28 @@ impl ClientExt for Client {
             Err(_) => return,
         };
         if (room.kick_user(user_id, None).await).is_ok() {};
+    }
+}
+
+#[async_trait]
+pub trait InvitedExt {
+    async fn accept_invitation_background(&self);
+}
+
+#[async_trait]
+impl InvitedExt for Invited {
+    async fn accept_invitation_background(&self) {
+        let mut delay = 2;
+        while (self.accept_invitation().await).is_err() {
+            // retry autojoin due to synapse sending invites, before the
+            // invited user can join for more information see
+            // https://github.com/matrix-org/synapse/issues/4345
+            sleep(Duration::from_secs(delay)).await;
+            delay *= 2;
+            if delay > 3600 {
+                break;
+            }
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 use crate::matrix::convert_message_type;
 use futures::{pin_mut, StreamExt};
 
+use crate::matrix::*;
 use matrix_sdk::{
     room::Room as MatrixRoom,
     ruma::events::{
@@ -375,17 +376,7 @@ impl App {
         // Accepts all invites
         let invites = self.client.invited_rooms();
         for room in invites {
-            let mut delay = 2;
-            while (room.accept_invitation().await).is_err() {
-                // retry autojoin due to synapse sending invites, before the
-                // invited user can join for more information see
-                // https://github.com/matrix-org/synapse/issues/4345
-                sleep(Duration::from_secs(delay)).await;
-                delay *= 2;
-                if delay > 3600 {
-                    break;
-                }
-            }
+            room.accept_invitation_background().await;
         }
     }
 
