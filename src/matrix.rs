@@ -241,6 +241,7 @@ pub fn convert_message_type(msgtype: MessageType, homeserver_url: Url) -> String
     }
 }
 
+/// Convert MediaSource to a readable url string
 fn handle_media_source(source: MediaSource, homeserver_url: Url) -> String {
     match source {
         MediaSource::Plain(mxc) => convert_mxc_to_url(mxc, homeserver_url).to_string(),
@@ -248,6 +249,7 @@ fn handle_media_source(source: MediaSource, homeserver_url: Url) -> String {
     }
 }
 
+/// Generate a url from an mxc uri
 fn convert_mxc_to_url(mxc: OwnedMxcUri, mut base_url: Url) -> Url {
     match mxc.parts() {
         Ok((server_name, media_id)) => {
