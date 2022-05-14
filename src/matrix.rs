@@ -99,17 +99,7 @@ impl ClientExt for Client {
                             return;
                         }
                         if let Room::Invited(room) = room {
-                            let mut delay = 2;
-                            while (room.accept_invitation().await).is_err() {
-                                // retry autojoin due to synapse sending invites, before the
-                                // invited user can join for more information see
-                                // https://github.com/matrix-org/synapse/issues/4345
-                                sleep(Duration::from_secs(delay)).await;
-                                delay *= 2;
-                                if delay > 3600 {
-                                    break;
-                                }
-                            }
+                            room.accept_invitation_background().await;
                         }
                     }
                 }
