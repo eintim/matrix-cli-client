@@ -361,13 +361,10 @@ impl App {
         let rooms = self.client.rooms();
 
         for room in rooms {
-            match room.room_type() {
-                RoomType::Joined => {
-                    self.rooms
-                        .add_room(room, self.client.homeserver().await)
-                        .await;
-                }
-                _ => {}
+            if room.room_type() == RoomType::Joined {
+                self.rooms
+                    .add_room(room, self.client.homeserver().await)
+                    .await;
             }
         }
 
@@ -450,7 +447,7 @@ impl App {
                         .members
                         .members
                         .iter_mut()
-                        .find(|m| m.1 == event.state_key.to_string())
+                        .find(|m| m.1 == event.state_key)
                     {
                         Some(_) => {}
                         None => {
@@ -503,7 +500,7 @@ impl App {
                                 };
                                 room.members.members.remove(i);
                             }
-                            None => return,
+                            None => (),
                         };
                     }
                 }
