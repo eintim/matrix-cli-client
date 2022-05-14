@@ -238,7 +238,7 @@ pub fn convert_message_type(msgtype: MessageType, homeserver_url: Url) -> String
 fn handle_media_source(source: MediaSource, homeserver_url: Url) -> String {
     match source {
         MediaSource::Plain(mxc) => convert_mxc_to_url(mxc, homeserver_url).to_string(),
-        MediaSource::Encrypted(_) => "".to_string(),
+        MediaSource::Encrypted(_) => "File is encrypted. Not Implemented!".to_string(),
     }
 }
 
