@@ -193,6 +193,7 @@ pub trait InvitedExt {
 
 #[async_trait]
 impl InvitedExt for Invited {
+    /// Accepts the invitation in the background
     async fn accept_invitation_background(&self) {
         let room = self.clone();
         tokio::spawn(async move {
@@ -249,6 +250,11 @@ pub fn convert_message_type(msgtype: MessageType, homeserver_url: Url) -> String
 }
 
 /// Convert MediaSource to a readable url string
+/// # Arguments
+/// * `source` - The media source
+/// * `homeserver_url` - The homeserver url
+/// # Returns
+/// * `String` - The readable url
 fn handle_media_source(source: MediaSource, homeserver_url: Url) -> String {
     match source {
         MediaSource::Plain(mxc) => convert_mxc_to_url(mxc, homeserver_url).to_string(),
@@ -257,6 +263,11 @@ fn handle_media_source(source: MediaSource, homeserver_url: Url) -> String {
 }
 
 /// Generate a url from an mxc uri
+/// # Arguments
+/// * `mxc` - The mxc uri
+/// * `base_url` - The homeserver url
+/// # Returns
+/// * `Url` - The url
 fn convert_mxc_to_url(mxc: OwnedMxcUri, mut base_url: Url) -> Url {
     match mxc.parts() {
         Ok((server_name, media_id)) => {
