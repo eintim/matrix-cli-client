@@ -423,6 +423,12 @@ impl App {
         }
     }
 
+    /// Handles OriginalSyncRoomMemberEvent events.
+    /// Takes data from the event and adds it to room.
+    /// # Arguments
+    /// * `event` - The event to handle.
+    /// * `room` - The room to handle the event in.
+    /// * `client` - The client used to receive messages.
     pub async fn handle_matrix_room_event(
         &mut self,
         event: OriginalSyncRoomMemberEvent,
