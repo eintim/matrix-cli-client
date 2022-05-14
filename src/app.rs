@@ -15,6 +15,8 @@ use matrix_sdk::{
 
 use tui::widgets::ListState;
 
+use tokio::time::{sleep, Duration};
+
 use chrono::offset::Utc;
 use chrono::DateTime;
 
@@ -360,10 +362,29 @@ impl App {
         let rooms = self.client.rooms();
 
         for room in rooms {
-            if room.room_type() == RoomType::Joined {
-                self.rooms
-                    .add_room(room, self.client.homeserver().await)
-                    .await;
+            match room.room_type() {
+                RoomType::Joined => {
+                    self.rooms
+                        .add_room(room, self.client.homeserver().await)
+                        .await;
+                }
+                _ => {}
+            }
+        }
+
+        // Accepts all invites
+        let invites = self.client.invited_rooms();
+        for room in invites {
+            let mut delay = 2;
+            while (room.accept_invitation().await).is_err() {
+                // retry autojoin due to synapse sending invites, before the
+                // invited user can join for more information see
+                // https://github.com/matrix-org/synapse/issues/4345
+                sleep(Duration::from_secs(delay)).await;
+                delay *= 2;
+                if delay > 3600 {
+                    break;
+                }
             }
         }
     }
@@ -435,9 +456,20 @@ impl App {
                         Some(display_name) => display_name,
                         None => "Unknown name".to_string(),
                     };
-                    r.members
+                    //Check if member is already in the list
+                    match r
                         .members
-                        .push((display_name, event.state_key.to_string()));
+                        .members
+                        .iter_mut()
+                        .find(|m| m.1 == event.state_key.to_string())
+                    {
+                        Some(_) => {}
+                        None => {
+                            r.members
+                                .members
+                                .push((display_name, event.state_key.to_string()));
+                        }
+                    };
                 }
                 None => {
                     // Create room if client joined
