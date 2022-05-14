@@ -477,7 +477,15 @@ impl App {
             match self.rooms.rooms.iter().position(|r| r.id == room_id) {
                 Some(i) => {
                     if event.state_key == user_id {
+                        // Deselect room to avoid crash
+                        if self.rooms.state.selected() == Some(i) {
+                            self.rooms.state.select(None);
+                        }
                         self.rooms.rooms.remove(i);
+                        // Reset Tab if last room is closed
+                        if self.current_tab == Tabs::Members || self.current_tab == Tabs::Input {
+                            self.current_tab = Tabs::Room;
+                        }
                     } else {
                         let room = match self.rooms.rooms.get_mut(i) {
                             Some(room) => room,
@@ -490,7 +498,13 @@ impl App {
                             // State_key contains user_id of event
                             .position(|m| m.1 == event.state_key)
                         {
-                            Some(i) => room.members.members.remove(i),
+                            Some(i) => {
+                                // Deselect member to avoid crash
+                                if room.members.state.selected() == Some(i) {
+                                    room.members.state.select(None);
+                                };
+                                room.members.members.remove(i);
+                            }
                             None => return,
                         };
                     }
