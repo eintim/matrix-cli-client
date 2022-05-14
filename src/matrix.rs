@@ -90,17 +90,7 @@ impl ClientExt for Client {
                 move |ev: OriginalSyncRoomMemberEvent, room: Room, client: Client| {
                     let tx = tx.clone();
                     async move {
-                        if (tx.send((ev.clone(), room.clone(), client.clone())).await).is_ok() {};
-                        let user_id = match client.user_id().await {
-                            Some(user_id) => user_id,
-                            None => return,
-                        };
-                        if ev.state_key != user_id {
-                            return;
-                        }
-                        if let Room::Invited(room) = room {
-                            room.accept_invitation_background().await;
-                        }
+                        if (tx.send((ev, room, client)).await).is_ok() {};
                     }
                 }
             })
@@ -118,7 +108,7 @@ impl ClientExt for Client {
                         return;
                     }
                     if let Room::Invited(room) = room {
-                        room.accept_invitation_background().await;
+                        room.accept_invitation_background();
                     }
                 }
             })
@@ -178,13 +168,13 @@ impl ClientExt for Client {
 
 #[async_trait]
 pub trait InvitedExt {
-    async fn accept_invitation_background(&self);
+    fn accept_invitation_background(&self);
 }
 
 #[async_trait]
 impl InvitedExt for Invited {
     /// Accepts the invitation in the background
-    async fn accept_invitation_background(&self) {
+    fn accept_invitation_background(&self) {
         let room = self.clone();
         tokio::spawn(async move {
             let mut delay = 2;

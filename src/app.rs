@@ -371,7 +371,7 @@ impl App {
         // Accepts all invites
         let invites = self.client.invited_rooms();
         for room in invites {
-            room.accept_invitation_background().await;
+            room.accept_invitation_background();
         }
     }
 
